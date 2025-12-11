@@ -589,6 +589,107 @@ body {
   color: var(--text-secondary);
 }
 
+/* Batch Results Modal */
+.modal-large {
+  width: 900px;
+  max-width: 95vw;
+}
+
+.batch-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+}
+
+.summary-stat {
+  text-align: center;
+}
+
+.summary-stat .stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary-stat .stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.summary-stat.good .stat-value { color: var(--success); }
+.summary-stat.warning .stat-value { color: var(--warning); }
+.summary-stat.poor .stat-value { color: var(--danger); }
+
+.batch-table-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.batch-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.batch-results-table th,
+.batch-results-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.batch-results-table th {
+  background: var(--bg-dark);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.batch-results-table tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.batch-results-table .value-good { color: var(--success); }
+.batch-results-table .value-warning { color: var(--warning); }
+.batch-results-table .value-poor { color: var(--danger); }
+
+.compliance-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.compliance-badge.pass {
+  background: rgba(39, 174, 96, 0.2);
+  color: var(--success);
+}
+
+.compliance-badge.fail {
+  background: rgba(231, 76, 60, 0.2);
+  color: var(--danger);
+}
+
+.compliance-badge.marginal {
+  background: rgba(243, 156, 18, 0.2);
+  color: var(--warning);
+}
+
+.recommendation-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 150px;
+}
+
 /* Utilities */
 .hidden {
   display: none !important;
