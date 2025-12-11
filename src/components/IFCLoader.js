@@ -260,40 +260,114 @@ export class IFCLoader {
    * @private
    */
   async _extractSpaceGeometry(spaceData) {
+    // First try to get geometry from the mesh
     const mesh = spaceData.mesh;
 
     if (mesh && mesh.geometry) {
-      const geometry = mesh.geometry;
-      geometry.computeBoundingBox();
-
-      const bbox = geometry.boundingBox;
-      spaceData.boundingBox = {
-        minX: bbox.min.x,
-        minY: bbox.min.y,
-        minZ: bbox.min.z,
-        maxX: bbox.max.x,
-        maxY: bbox.max.y,
-        maxZ: bbox.max.z,
-      };
-
-      // Estimate dimensions
-      const width = bbox.max.x - bbox.min.x;
-      const depth = bbox.max.z - bbox.min.z;
-      const height = bbox.max.y - bbox.min.y;
-
-      spaceData.height = height > 0 ? height : 2.7;
-      spaceData.floorArea = width * depth;
-      spaceData.perimeter = 2 * (width + depth);
-      spaceData.volume = spaceData.floorArea * spaceData.height;
-
-      // Create simplified floor polygon (rectangular approximation)
-      spaceData.floorPolygon = [
-        { x: bbox.min.x, y: bbox.min.z },
-        { x: bbox.max.x, y: bbox.min.z },
-        { x: bbox.max.x, y: bbox.max.z },
-        { x: bbox.min.x, y: bbox.max.z },
-      ];
+      this._extractGeometryFromMesh(spaceData, mesh);
+      return;
     }
+
+    // Fallback: Extract geometry directly from web-ifc
+    try {
+      const flatMesh = this.ifcAPI.GetFlatMesh(this.modelID, spaceData.expressID);
+
+      if (flatMesh.geometries.size() > 0) {
+        // Get the first geometry
+        const placedGeom = flatMesh.geometries.get(0);
+        const geom = this.ifcAPI.GetGeometry(this.modelID, placedGeom.geometryExpressID);
+
+        const vertices = this.ifcAPI.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
+
+        if (vertices.length > 0) {
+          // Get transformation matrix
+          const matrix = new THREE.Matrix4();
+          matrix.fromArray(placedGeom.flatTransformation);
+
+          // Find bounding box from vertices (position is every 6 floats: x,y,z,nx,ny,nz)
+          let minX = Infinity, minY = Infinity, minZ = Infinity;
+          let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+          for (let i = 0; i < vertices.length; i += 6) {
+            // Apply transformation to vertex
+            const v = new THREE.Vector3(vertices[i], vertices[i + 1], vertices[i + 2]);
+            v.applyMatrix4(matrix);
+
+            minX = Math.min(minX, v.x);
+            minY = Math.min(minY, v.y);
+            minZ = Math.min(minZ, v.z);
+            maxX = Math.max(maxX, v.x);
+            maxY = Math.max(maxY, v.y);
+            maxZ = Math.max(maxZ, v.z);
+          }
+
+          if (minX !== Infinity) {
+            spaceData.boundingBox = { minX, minY, minZ, maxX, maxY, maxZ };
+
+            const width = maxX - minX;
+            const depth = maxZ - minZ;
+            const height = maxY - minY;
+
+            spaceData.height = height > 0 ? height : 2.7;
+            spaceData.floorArea = width * depth;
+            spaceData.perimeter = 2 * (width + depth);
+            spaceData.volume = spaceData.floorArea * spaceData.height;
+
+            spaceData.floorPolygon = [
+              { x: minX, y: minZ },
+              { x: maxX, y: minZ },
+              { x: maxX, y: maxZ },
+              { x: minX, y: maxZ },
+            ];
+
+            console.log(`Space "${spaceData.name}": ${spaceData.floorArea.toFixed(2)} m² (${width.toFixed(2)} x ${depth.toFixed(2)} m)`);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not extract geometry for space ${spaceData.name}:`, error);
+    }
+  }
+
+  /**
+   * Extract geometry from a Three.js mesh
+   * @param {Object} spaceData - Space data object
+   * @param {THREE.Mesh} mesh - Mesh to extract from
+   * @private
+   */
+  _extractGeometryFromMesh(spaceData, mesh) {
+    const geometry = mesh.geometry;
+    geometry.computeBoundingBox();
+
+    const bbox = geometry.boundingBox;
+    spaceData.boundingBox = {
+      minX: bbox.min.x,
+      minY: bbox.min.y,
+      minZ: bbox.min.z,
+      maxX: bbox.max.x,
+      maxY: bbox.max.y,
+      maxZ: bbox.max.z,
+    };
+
+    // Estimate dimensions
+    const width = bbox.max.x - bbox.min.x;
+    const depth = bbox.max.z - bbox.min.z;
+    const height = bbox.max.y - bbox.min.y;
+
+    spaceData.height = height > 0 ? height : 2.7;
+    spaceData.floorArea = width * depth;
+    spaceData.perimeter = 2 * (width + depth);
+    spaceData.volume = spaceData.floorArea * spaceData.height;
+
+    // Create simplified floor polygon (rectangular approximation)
+    spaceData.floorPolygon = [
+      { x: bbox.min.x, y: bbox.min.z },
+      { x: bbox.max.x, y: bbox.min.z },
+      { x: bbox.max.x, y: bbox.max.z },
+      { x: bbox.min.x, y: bbox.max.z },
+    ];
+
+    console.log(`Space "${spaceData.name}" (from mesh): ${spaceData.floorArea.toFixed(2)} m²`);
   }
 
   /**
