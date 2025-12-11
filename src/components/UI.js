@@ -106,6 +106,7 @@ export class UI {
       settingFloorRef: document.getElementById('setting-floor-ref'),
       settingLatitude: document.getElementById('setting-latitude'),
       settingLongitude: document.getElementById('setting-longitude'),
+      settingEnhancedMode: document.getElementById('setting-enhanced-mode'),
 
       // Batch analysis
       btnCalculateAll: document.getElementById('btn-calculate-all'),
@@ -839,6 +840,7 @@ export class UI {
         latitude: parseFloat(this.elements.settingLatitude.value),
         longitude: parseFloat(this.elements.settingLongitude.value),
       },
+      enhancedMode: this.elements.settingEnhancedMode.checked,
     };
   }
 
@@ -868,6 +870,7 @@ export class UI {
         this.elements.settingFloorRef.value = settings.reflectances?.floor || 0.2;
         this.elements.settingLatitude.value = settings.location?.latitude || 51.5;
         this.elements.settingLongitude.value = settings.location?.longitude || -0.1;
+        this.elements.settingEnhancedMode.checked = settings.enhancedMode || false;
       } catch {
         console.warn('Failed to load settings');
       }

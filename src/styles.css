@@ -518,6 +518,25 @@ body {
   font-size: 13px;
 }
 
+.settings-group input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start !important;
+  cursor: pointer;
+}
+
+.setting-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 .btn-primary {
   padding: 10px 20px;
   background: var(--accent);

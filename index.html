@@ -227,6 +227,14 @@
             <input type="number" id="setting-longitude" value="-0.1" step="0.1" min="-180" max="180">
           </label>
         </div>
+        <div class="settings-group">
+          <h4>Calculation Accuracy</h4>
+          <label class="checkbox-label">
+            <input type="checkbox" id="setting-enhanced-mode">
+            Enhanced Mode (Monte Carlo)
+          </label>
+          <p class="setting-hint">More accurate but slower. Uses ray tracing with hemisphere sampling.</p>
+        </div>
       </div>
       <div class="modal-footer">
         <button id="settings-save" class="btn-primary">Save Settings</button>
