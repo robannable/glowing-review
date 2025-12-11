@@ -1008,28 +1008,33 @@ export class Viewer {
     markerGroup.name = id;
 
     // Sphere head
-    const sphereGeom = new THREE.SphereGeometry(0.3, 16, 16);
+    const sphereGeom = new THREE.SphereGeometry(0.2, 16, 16);
     const sphereMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color) });
     const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-    sphere.position.y = 0.8;
+    sphere.position.y = 0.5;
     markerGroup.add(sphere);
 
     // Pin shaft
-    const shaftGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8);
+    const shaftGeom = new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8);
     const shaftMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color) });
     const shaft = new THREE.Mesh(shaftGeom, shaftMat);
-    shaft.position.y = 0.4;
+    shaft.position.y = 0.25;
     markerGroup.add(shaft);
 
-    // Point tip
-    const tipGeom = new THREE.ConeGeometry(0.12, 0.2, 8);
+    // Point tip (touches surface)
+    const tipGeom = new THREE.ConeGeometry(0.08, 0.15, 8);
     const tipMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color) });
     const tip = new THREE.Mesh(tipGeom, tipMat);
-    tip.position.y = -0.1;
+    tip.position.y = 0;
     tip.rotation.x = Math.PI;
     markerGroup.add(tip);
 
-    // Position the marker
+    // Create text label sprite
+    const label = this._createTextSprite(text, color);
+    label.position.y = 0.9; // Above the pin head
+    markerGroup.add(label);
+
+    // Position the marker exactly at the hit point
     markerGroup.position.copy(position);
 
     // Store annotation data
@@ -1039,12 +1044,69 @@ export class Viewer {
       text,
       color,
       mesh: markerGroup,
+      label,
     };
 
     this.annotations.push(annotation);
     this.annotationsGroup.add(markerGroup);
 
     return annotation;
+  }
+
+  /**
+   * Create a text sprite for annotation labels
+   * @param {string} text - Label text
+   * @param {string} bgColor - Background color
+   * @returns {THREE.Sprite}
+   * @private
+   */
+  _createTextSprite(text, bgColor = '#ffaa00') {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Measure text to size canvas appropriately
+    ctx.font = 'bold 28px Arial';
+    const textWidth = Math.min(ctx.measureText(text).width + 20, 300);
+
+    canvas.width = textWidth;
+    canvas.height = 40;
+
+    // Draw rounded background
+    ctx.fillStyle = bgColor;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, canvas.width, canvas.height, 6);
+    ctx.fill();
+
+    // Draw text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Truncate text if too long
+    let displayText = text;
+    if (ctx.measureText(text).width > canvas.width - 16) {
+      while (ctx.measureText(displayText + '...').width > canvas.width - 16 && displayText.length > 0) {
+        displayText = displayText.slice(0, -1);
+      }
+      displayText += '...';
+    }
+    ctx.fillText(displayText, canvas.width / 2, canvas.height / 2);
+
+    // Create sprite
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false, // Always visible
+    });
+
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(canvas.width / 60, canvas.height / 60, 1);
+
+    return sprite;
   }
 
   /**
@@ -1099,14 +1161,36 @@ export class Viewer {
    * @returns {THREE.Vector3|null} 3D position or null
    */
   getClickPosition(event) {
-    // Raycast against model
-    const intersects = this.raycast(event, this.modelGroup.children);
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Collect all meshes from model group recursively
+    const meshes = [];
+    this.modelGroup.traverse((obj) => {
+      if (obj.isMesh && obj.visible) {
+        meshes.push(obj);
+      }
+    });
+
+    // Also include room meshes and heatmap
+    this.roomsGroup.traverse((obj) => {
+      if (obj.isMesh && obj.visible) {
+        meshes.push(obj);
+      }
+    });
+
+    // Raycast against all model meshes
+    const intersects = this.raycaster.intersectObjects(meshes, false);
     if (intersects.length > 0) {
+      // Return the exact hit point on the surface
       return intersects[0].point.clone();
     }
 
-    // Also check ground plane
-    const groundIntersects = this.raycast(event, [this.ground]);
+    // Fallback to ground plane
+    const groundIntersects = this.raycaster.intersectObject(this.ground, false);
     if (groundIntersects.length > 0) {
       return groundIntersects[0].point.clone();
     }

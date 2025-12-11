@@ -787,6 +787,70 @@ body {
   background: #3a7bc8;
 }
 
+/* Sun Path Controls */
+.control-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.control-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.quick-dates {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.quick-date-btn {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-date-btn:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.quick-date-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.sunpath-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 8px;
+}
+
+.sunpath-info label {
+  margin-bottom: 0 !important;
+}
+
+.sunpath-info span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 /* Comparison Modal Styles */
 .comparison-header {
   display: flex;

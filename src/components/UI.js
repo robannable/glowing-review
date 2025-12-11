@@ -39,6 +39,10 @@ export class UI {
     // Section state
     this.sectionEnabled = false;
 
+    // Sun path state
+    this.sunPathEnabled = false;
+    this.sunPathDate = new Date();
+
     // Annotation state
     this.annotationMode = false;
     this.pendingAnnotationPosition = null;
@@ -122,14 +126,21 @@ export class UI {
       batchExportCSV: document.getElementById('batch-export-csv'),
       batchExportPDF: document.getElementById('batch-export-pdf'),
 
-      // Section and Sun Path controls
+      // Section controls
       btnSection: document.getElementById('btn-section'),
-      btnSunPath: document.getElementById('btn-sun-path'),
       sectionControls: document.getElementById('section-controls'),
       sectionAxis: document.getElementById('section-axis'),
       sectionSlider: document.getElementById('section-slider'),
       sectionValue: document.getElementById('section-value'),
       sectionClose: document.getElementById('section-close'),
+
+      // Sun Path controls
+      btnSunPath: document.getElementById('btn-sun-path'),
+      sunpathControls: document.getElementById('sunpath-controls'),
+      sunpathDate: document.getElementById('sunpath-date'),
+      sunpathLocation: document.getElementById('sunpath-location'),
+      sunpathClose: document.getElementById('sunpath-close'),
+      quickDateBtns: document.querySelectorAll('.quick-date-btn'),
 
       // Comparison
       btnCompare: document.getElementById('btn-compare'),
@@ -324,8 +335,40 @@ export class UI {
     // Sun path toggle
     this.elements.btnSunPath.addEventListener('click', () => {
       if (this.onSunPathToggle) {
-        this.onSunPathToggle();
+        this.onSunPathToggle(this.sunPathDate);
       }
+    });
+
+    // Sun path close button
+    this.elements.sunpathClose.addEventListener('click', () => {
+      if (this.onSunPathToggle) {
+        this.onSunPathToggle(this.sunPathDate); // Toggle off
+      }
+    });
+
+    // Sun path date picker
+    this.elements.sunpathDate.addEventListener('change', (e) => {
+      this.sunPathDate = new Date(e.target.value);
+      this._clearQuickDateButtons();
+      if (this.sunPathEnabled && this.onSunPathToggle) {
+        // Re-render with new date
+        this.onSunPathToggle(this.sunPathDate, true); // Force update
+      }
+    });
+
+    // Quick date buttons
+    this.elements.quickDateBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const month = parseInt(btn.dataset.month);
+        const day = parseInt(btn.dataset.day);
+        const year = new Date().getFullYear();
+        this.sunPathDate = new Date(year, month - 1, day);
+        this.elements.sunpathDate.value = this.sunPathDate.toISOString().split('T')[0];
+        this._setActiveQuickDateButton(btn);
+        if (this.sunPathEnabled && this.onSunPathToggle) {
+          this.onSunPathToggle(this.sunPathDate, true); // Force update
+        }
+      });
     });
 
     // Compare button
@@ -594,15 +637,52 @@ export class UI {
   }
 
   /**
-   * Toggle sun path button state
+   * Toggle sun path button state and show/hide controls
    * @param {boolean} active - Whether sun path is visible
+   * @param {Object} settings - Location settings
    */
-  setSunPathActive(active) {
+  setSunPathActive(active, settings = null) {
+    this.sunPathEnabled = active;
+
     if (active) {
       this.elements.btnSunPath.classList.add('active-feature');
+      this.elements.sunpathControls.classList.remove('hidden');
+
+      // Set current date in date picker
+      this.elements.sunpathDate.value = this.sunPathDate.toISOString().split('T')[0];
+
+      // Update location display
+      if (settings) {
+        const lat = settings.latitude;
+        const lon = settings.longitude;
+        const latDir = lat >= 0 ? 'N' : 'S';
+        const lonDir = lon >= 0 ? 'E' : 'W';
+        this.elements.sunpathLocation.textContent = `${Math.abs(lat).toFixed(1)}°${latDir}, ${Math.abs(lon).toFixed(1)}°${lonDir}`;
+      }
     } else {
       this.elements.btnSunPath.classList.remove('active-feature');
+      this.elements.sunpathControls.classList.add('hidden');
     }
+  }
+
+  /**
+   * Clear active state from all quick date buttons
+   * @private
+   */
+  _clearQuickDateButtons() {
+    this.elements.quickDateBtns.forEach((btn) => {
+      btn.classList.remove('active');
+    });
+  }
+
+  /**
+   * Set a quick date button as active
+   * @param {HTMLElement} activeBtn - The button to activate
+   * @private
+   */
+  _setActiveQuickDateButton(activeBtn) {
+    this._clearQuickDateButtons();
+    activeBtn.classList.add('active');
   }
 
   /**
