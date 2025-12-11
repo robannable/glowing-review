@@ -15,8 +15,12 @@ DaylightLab allows architects to quickly assess daylight levels in building desi
 - Automatic window detection
 - Daylight factor calculation with Sky Component and Internally Reflected Component
 - Visual heatmap display with solid/wireframe/hidden building toggle
+- Section cuts to slice through multi-storey buildings
+- Sun path visualization for site orientation
 - BREEAM compliance checking with pass/marginal/fail status
 - Window optimization recommendations
+- Model comparison to track design iteration improvements
+- Annotations for client presentations
 - CSV and PDF report export
 
 ## Quick Start
@@ -71,6 +75,36 @@ Click "All Rooms" to analyze every room in the model and see:
 - **CSV** — Spreadsheet with all room metrics for further analysis
 - **PDF** — Professional report for client presentations
 - **Image** — Screenshot of current view
+
+### Section Cuts
+Slice through the building model to view internal heatmaps:
+- Press **S** or click the Section button to enable
+- Choose axis: Horizontal (Y), Vertical X, or Vertical Z
+- Use the slider to move the cutting plane through the model
+- Helps visualize daylight distribution at different floor levels
+
+### Sun Path Visualization
+Display the sun's trajectory for your project location:
+- Press **P** or click the Sun Path button to toggle
+- Shows golden arc with hour markers (6:00-18:00)
+- Compass directions (N/E/S/W) for orientation
+- Uses latitude/longitude from Settings (default: London)
+
+### Model Comparison
+Compare daylight performance between design iterations:
+1. Load your baseline IFC model
+2. Run "All Rooms" batch analysis to create the baseline
+3. Click "Compare" and select a revised IFC file
+4. View side-by-side metrics showing improvements/regressions
+5. Per-room comparison with change indicators
+
+### Annotations
+Add notes to specific points on the model for presentations:
+- Press **N** or click Annotate to enter annotation mode
+- Click anywhere on the model to place a marker
+- Enter your note text and choose a color
+- Click existing annotations to delete them
+- Markers appear as colored pins in 3D space
 
 ## Documentation
 
