@@ -1,0 +1,29 @@
+{
+  "name": "daylightlab",
+  "version": "0.1.0",
+  "description": "Browser-based daylight analysis tool for architects",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "web-ifc": "^0.0.57",
+    "suncalc": "^1.9.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "keywords": [
+    "daylight",
+    "architecture",
+    "ifc",
+    "bim",
+    "analysis",
+    "threejs"
+  ],
+  "author": "",
+  "license": "MIT"
+}
