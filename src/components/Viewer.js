@@ -42,10 +42,6 @@ export class Viewer {
     this.clippingHelper = null;
     this.modelBounds = null;
 
-    // Sun path visualization
-    this.sunPathGroup = new THREE.Group();
-    this.sunPathGroup.name = 'sunPath';
-
     // Annotations
     this.annotationsGroup = new THREE.Group();
     this.annotationsGroup.name = 'annotations';
@@ -218,7 +214,6 @@ export class Viewer {
     this.scene.add(this.modelGroup);
     this.scene.add(this.roomsGroup);
     this.scene.add(this.heatmapGroup);
-    this.scene.add(this.sunPathGroup);
     this.scene.add(this.annotationsGroup);
   }
 
@@ -778,218 +773,6 @@ export class Viewer {
   }
 
   // ============================================
-  // Sun Path Visualization
-  // ============================================
-
-  /**
-   * Show sun path arc for a given location and date
-   * @param {Object} options - { latitude, longitude, date }
-   */
-  showSunPath(options = {}) {
-    const {
-      latitude = 51.5,
-      longitude = -0.1,
-      date = new Date(),
-    } = options;
-
-    // Clear existing sun path
-    this.clearSunPath();
-
-    // Calculate sun positions throughout the day
-    const positions = this._calculateSunPositions(latitude, longitude, date);
-
-    if (positions.length === 0) return;
-
-    // Get model center for positioning
-    let center = new THREE.Vector3(0, 0, 0);
-    if (this.modelGroup.children.length > 0) {
-      const box = new THREE.Box3().setFromObject(this.modelGroup);
-      box.getCenter(center);
-    }
-
-    const radius = 20; // Sun path radius
-
-    // Create sun path arc
-    const points = positions.map(pos => {
-      const x = center.x + radius * Math.cos(pos.azimuthRad) * Math.cos(pos.altitudeRad);
-      const y = center.y + radius * Math.sin(pos.altitudeRad);
-      const z = center.z + radius * Math.sin(pos.azimuthRad) * Math.cos(pos.altitudeRad);
-      return new THREE.Vector3(x, Math.max(y, center.y), z);
-    });
-
-    // Create the arc line
-    const curve = new THREE.CatmullRomCurve3(points);
-    const arcGeometry = new THREE.TubeGeometry(curve, 64, 0.1, 8, false);
-    const arcMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffaa00,
-      transparent: true,
-      opacity: 0.6,
-    });
-    const arc = new THREE.Mesh(arcGeometry, arcMaterial);
-    this.sunPathGroup.add(arc);
-
-    // Add hour markers
-    for (let hour = 6; hour <= 18; hour += 2) {
-      const pos = positions.find(p => p.hour === hour);
-      if (pos && pos.altitudeRad > 0) {
-        const x = center.x + radius * Math.cos(pos.azimuthRad) * Math.cos(pos.altitudeRad);
-        const y = center.y + radius * Math.sin(pos.altitudeRad);
-        const z = center.z + radius * Math.sin(pos.azimuthRad) * Math.cos(pos.altitudeRad);
-
-        // Sun sphere
-        const sunGeom = new THREE.SphereGeometry(0.5, 16, 16);
-        const sunMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        const sun = new THREE.Mesh(sunGeom, sunMat);
-        sun.position.set(x, Math.max(y, center.y + 0.5), z);
-        this.sunPathGroup.add(sun);
-
-        // Hour label (using sprite)
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 32;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 24px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${hour}:00`, 32, 24);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.set(x, Math.max(y, center.y + 0.5) + 1.5, z);
-        sprite.scale.set(3, 1.5, 1);
-        this.sunPathGroup.add(sprite);
-      }
-    }
-
-    // Add compass directions
-    this._addCompassMarkers(center, radius);
-  }
-
-  /**
-   * Calculate sun positions throughout the day
-   * @param {number} latitude
-   * @param {number} longitude
-   * @param {Date} date
-   * @returns {Array} Sun positions with altitude and azimuth
-   * @private
-   */
-  _calculateSunPositions(latitude, longitude, date) {
-    const positions = [];
-    const dayOfYear = this._getDayOfYear(date);
-    const latRad = latitude * Math.PI / 180;
-
-    // Declination angle (simplified)
-    const declination = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180) * Math.PI / 180;
-
-    for (let hour = 5; hour <= 20; hour += 0.5) {
-      // Hour angle
-      const hourAngle = (hour - 12) * 15 * Math.PI / 180;
-
-      // Solar altitude
-      const sinAlt = Math.sin(latRad) * Math.sin(declination) +
-                     Math.cos(latRad) * Math.cos(declination) * Math.cos(hourAngle);
-      const altitude = Math.asin(sinAlt);
-
-      // Solar azimuth
-      const cosAz = (Math.sin(declination) - Math.sin(latRad) * sinAlt) /
-                    (Math.cos(latRad) * Math.cos(altitude));
-      let azimuth = Math.acos(Math.max(-1, Math.min(1, cosAz)));
-      if (hour > 12) azimuth = 2 * Math.PI - azimuth;
-
-      // Adjust to Three.js coordinate system (Z = North)
-      azimuth = Math.PI - azimuth;
-
-      if (altitude > 0) {
-        positions.push({
-          hour: Math.floor(hour),
-          altitudeRad: altitude,
-          azimuthRad: azimuth,
-          altitude: altitude * 180 / Math.PI,
-          azimuth: azimuth * 180 / Math.PI,
-        });
-      }
-    }
-
-    return positions;
-  }
-
-  /**
-   * Get day of year
-   * @param {Date} date
-   * @returns {number}
-   * @private
-   */
-  _getDayOfYear(date) {
-    const start = new Date(date.getFullYear(), 0, 0);
-    const diff = date - start;
-    const oneDay = 1000 * 60 * 60 * 24;
-    return Math.floor(diff / oneDay);
-  }
-
-  /**
-   * Add compass direction markers
-   * @param {THREE.Vector3} center
-   * @param {number} radius
-   * @private
-   */
-  _addCompassMarkers(center, radius) {
-    const directions = [
-      { label: 'N', angle: 0 },
-      { label: 'E', angle: Math.PI / 2 },
-      { label: 'S', angle: Math.PI },
-      { label: 'W', angle: -Math.PI / 2 },
-    ];
-
-    directions.forEach(dir => {
-      const x = center.x + (radius + 2) * Math.sin(dir.angle);
-      const z = center.z + (radius + 2) * Math.cos(dir.angle);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = dir.label === 'N' ? '#ff4444' : '#aaaaaa';
-      ctx.font = 'bold 48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(dir.label, 32, 48);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.position.set(x, center.y + 0.5, z);
-      sprite.scale.set(2, 2, 1);
-      this.sunPathGroup.add(sprite);
-    });
-  }
-
-  /**
-   * Clear sun path visualization
-   */
-  clearSunPath() {
-    while (this.sunPathGroup.children.length > 0) {
-      const child = this.sunPathGroup.children[0];
-      this._disposeObject(child);
-      this.sunPathGroup.remove(child);
-    }
-  }
-
-  /**
-   * Toggle sun path visibility
-   * @param {Object} options - Sun path options
-   * @returns {boolean} New visibility state
-   */
-  toggleSunPath(options) {
-    if (this.sunPathGroup.children.length > 0) {
-      this.clearSunPath();
-      return false;
-    } else {
-      this.showSunPath(options);
-      return true;
-    }
-  }
-
-  // ============================================
   // Annotations
   // ============================================
 
@@ -1217,7 +1000,6 @@ export class Viewer {
     this.clearModel();
     this.clearRooms();
     this.clearHeatmap();
-    this.clearSunPath();
     this.disableSectionCut();
 
     if (this.controls) {

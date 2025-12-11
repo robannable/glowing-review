@@ -39,9 +39,6 @@
         <button id="btn-section" class="toolbar-btn" disabled title="Section cut (S)">
           <span class="btn-icon">✂️</span> Section
         </button>
-        <button id="btn-sun-path" class="toolbar-btn" disabled title="Sun path (P)">
-          <span class="btn-icon">🌅</span> Sun Path
-        </button>
         <div class="toolbar-divider"></div>
         <button id="btn-compare" class="toolbar-btn" disabled title="Compare with another model">
           <span class="btn-icon">⚖️</span> Compare
@@ -99,32 +96,6 @@
             <div class="control-row">
               <label>Height: <span id="section-value">0.0</span>m</label>
               <input type="range" id="section-slider" min="0" max="100" value="50" step="1">
-            </div>
-          </div>
-        </div>
-
-        <!-- Sun Path Control Panel -->
-        <div id="sunpath-controls" class="viewport-controls hidden" style="left: auto; right: 10px;">
-          <div class="control-header">
-            <span>☀️ Sun Path</span>
-            <button id="sunpath-close" class="control-close">&times;</button>
-          </div>
-          <div class="control-body">
-            <div class="control-row">
-              <label>Date:</label>
-              <input type="date" id="sunpath-date" class="control-input">
-            </div>
-            <div class="control-row">
-              <label>Quick select:</label>
-              <div class="quick-dates">
-                <button class="quick-date-btn" data-month="6" data-day="21">Summer</button>
-                <button class="quick-date-btn" data-month="3" data-day="21">Equinox</button>
-                <button class="quick-date-btn" data-month="12" data-day="21">Winter</button>
-              </div>
-            </div>
-            <div class="control-row sunpath-info">
-              <label>Location:</label>
-              <span id="sunpath-location">51.5°N, 0.1°W</span>
             </div>
           </div>
         </div>

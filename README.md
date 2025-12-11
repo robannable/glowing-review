@@ -16,7 +16,6 @@ DaylightLab allows architects to quickly assess daylight levels in building desi
 - Daylight factor calculation with Sky Component and Internally Reflected Component
 - Visual heatmap display with solid/wireframe/hidden building toggle
 - Section cuts to slice through multi-storey buildings
-- Sun path visualization for site orientation
 - BREEAM compliance checking with pass/marginal/fail status
 - Window optimization recommendations
 - Model comparison to track design iteration improvements
@@ -48,7 +47,6 @@ Open http://localhost:5173 and drag-drop an IFC file to begin.
 | A | Analyze all rooms |
 | V | Toggle display mode (solid/wireframe/hidden) |
 | S | Toggle section cut |
-| P | Toggle sun path |
 | N | Toggle annotation mode |
 | 2 | 2D plan view |
 | 3 | 3D perspective view |
@@ -82,13 +80,6 @@ Slice through the building model to view internal heatmaps:
 - Choose axis: Horizontal (Y), Vertical X, or Vertical Z
 - Use the slider to move the cutting plane through the model
 - Helps visualize daylight distribution at different floor levels
-
-### Sun Path Visualization
-Display the sun's trajectory for your project location:
-- Press **P** or click the Sun Path button to toggle
-- Shows golden arc with hour markers (6:00-18:00)
-- Compass directions (N/E/S/W) for orientation
-- Uses latitude/longitude from Settings (default: London)
 
 ### Model Comparison
 Compare daylight performance between design iterations:
@@ -148,7 +139,6 @@ daylightlab/
 ### Planned Features
 
 - [x] **Section Cuts** — Slice through the model to view heatmaps from different angles
-- [x] **Sun Path Visualization** — Show sun position throughout the day
 - [x] **Comparison Mode** — Load two IFC versions side-by-side to compare design changes
 - [x] **Annotations** — Add notes to specific points for client presentations
 
