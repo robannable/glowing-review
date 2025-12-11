@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DaylightLab - Daylight Analysis Tool</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Toolbar -->
+    <header id="toolbar">
+      <div class="toolbar-left">
+        <h1 class="app-title">DaylightLab</h1>
+      </div>
+      <div class="toolbar-center">
+        <button id="btn-open" class="toolbar-btn" title="Open IFC file (O)">
+          <span class="btn-icon">📂</span> Open IFC
+        </button>
+        <div class="toolbar-divider"></div>
+        <select id="room-select" class="toolbar-select" disabled>
+          <option value="">Select Room...</option>
+        </select>
+        <button id="btn-calculate" class="toolbar-btn" disabled title="Calculate daylight (C)">
+          <span class="btn-icon">☀️</span> Calculate
+        </button>
+        <div class="toolbar-divider"></div>
+        <button id="btn-view-2d" class="toolbar-btn" disabled title="2D Plan View (2)">2D</button>
+        <button id="btn-view-3d" class="toolbar-btn active" disabled title="3D View (3)">3D</button>
+        <button id="btn-reset" class="toolbar-btn" disabled title="Reset View (R)">Reset</button>
+      </div>
+      <div class="toolbar-right">
+        <button id="btn-settings" class="toolbar-btn" title="Settings">⚙️</button>
+        <button id="btn-export" class="toolbar-btn" disabled title="Export Image">📷</button>
+      </div>
+    </header>
+
+    <!-- Main content area -->
+    <main id="main-content">
+      <!-- 3D Viewport -->
+      <div id="viewport">
+        <div id="drop-zone" class="active">
+          <div class="drop-zone-content">
+            <span class="drop-icon">📁</span>
+            <h2>Drop IFC file here</h2>
+            <p>or click "Open IFC" to browse</p>
+          </div>
+        </div>
+        <div id="loading-overlay" class="hidden">
+          <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loading-text">Loading...</p>
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+        <canvas id="canvas"></canvas>
+      </div>
+
+      <!-- Side panel -->
+      <aside id="side-panel" class="collapsed">
+        <div class="panel-toggle" id="panel-toggle">◀</div>
+        <div class="panel-content">
+          <!-- Room Info Section -->
+          <section class="panel-section" id="room-info-section">
+            <h3 class="section-title">Room Information</h3>
+            <div id="room-info" class="section-content">
+              <p class="placeholder-text">Select a room to see details</p>
+            </div>
+          </section>
+
+          <!-- Windows Section -->
+          <section class="panel-section" id="windows-section">
+            <h3 class="section-title">Windows</h3>
+            <div id="windows-info" class="section-content">
+              <p class="placeholder-text">Select a room to see windows</p>
+            </div>
+          </section>
+
+          <!-- Results Section -->
+          <section class="panel-section" id="results-section">
+            <h3 class="section-title">Daylight Results</h3>
+            <div id="results-info" class="section-content">
+              <p class="placeholder-text">Calculate daylight to see results</p>
+            </div>
+          </section>
+
+          <!-- Legend -->
+          <section class="panel-section" id="legend-section">
+            <h3 class="section-title">Legend</h3>
+            <div id="legend" class="section-content">
+              <div class="legend-scale">
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                  <span>0%</span>
+                  <span>1%</span>
+                  <span>2%</span>
+                  <span>5%</span>
+                  <span>10%+</span>
+                </div>
+              </div>
+              <div class="legend-thresholds">
+                <div class="threshold-item poor">
+                  <span class="threshold-color"></span>
+                  <span>&lt; 2% - Poor</span>
+                </div>
+                <div class="threshold-item adequate">
+                  <span class="threshold-color"></span>
+                  <span>2-5% - Adequate</span>
+                </div>
+                <div class="threshold-item good">
+                  <span class="threshold-color"></span>
+                  <span>&gt; 5% - Well lit</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Status bar -->
+    <footer id="status-bar">
+      <span id="status-text">Ready - Drop an IFC file to begin</span>
+      <span id="status-coords"></span>
+    </footer>
+  </div>
+
+  <!-- Hidden file input -->
+  <input type="file" id="file-input" accept=".ifc" style="display: none;">
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close" id="settings-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-group">
+          <h4>Grid Settings</h4>
+          <label>
+            Grid Spacing (m):
+            <select id="setting-grid-spacing">
+              <option value="0.25">0.25m (Fine)</option>
+              <option value="0.5" selected>0.5m (Standard)</option>
+              <option value="1.0">1.0m (Coarse)</option>
+            </select>
+          </label>
+          <label>
+            Work Plane Height (m):
+            <input type="number" id="setting-work-plane" value="0.85" step="0.05" min="0" max="2">
+          </label>
+        </div>
+        <div class="settings-group">
+          <h4>Material Properties</h4>
+          <label>
+            Glazing Transmittance:
+            <input type="number" id="setting-transmittance" value="0.7" step="0.05" min="0.1" max="0.95">
+          </label>
+          <label>
+            Ceiling Reflectance:
+            <input type="number" id="setting-ceiling-ref" value="0.8" step="0.05" min="0.1" max="0.95">
+          </label>
+          <label>
+            Wall Reflectance:
+            <input type="number" id="setting-wall-ref" value="0.5" step="0.05" min="0.1" max="0.95">
+          </label>
+          <label>
+            Floor Reflectance:
+            <input type="number" id="setting-floor-ref" value="0.2" step="0.05" min="0.1" max="0.95">
+          </label>
+        </div>
+        <div class="settings-group">
+          <h4>Location</h4>
+          <label>
+            Latitude:
+            <input type="number" id="setting-latitude" value="51.5" step="0.1" min="-90" max="90">
+          </label>
+          <label>
+            Longitude:
+            <input type="number" id="setting-longitude" value="-0.1" step="0.1" min="-180" max="180">
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-save" class="btn-primary">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
