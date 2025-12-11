@@ -18,11 +18,17 @@ export class UI {
     this.onFileOpen = null;
     this.onRoomSelect = null;
     this.onCalculate = null;
+    this.onCalculateAll = null;
     this.onViewChange = null;
     this.onResetView = null;
     this.onExport = null;
+    this.onExportCSV = null;
+    this.onExportPDF = null;
     this.onSettingsSave = null;
     this.onDisplayModeChange = null;
+
+    // Batch results data
+    this.batchResults = null;
   }
 
   /**
@@ -88,6 +94,20 @@ export class UI {
       settingFloorRef: document.getElementById('setting-floor-ref'),
       settingLatitude: document.getElementById('setting-latitude'),
       settingLongitude: document.getElementById('setting-longitude'),
+
+      // Batch analysis
+      btnCalculateAll: document.getElementById('btn-calculate-all'),
+      btnExportCSV: document.getElementById('btn-export-csv'),
+      btnExportPDF: document.getElementById('btn-export-pdf'),
+
+      // Batch results modal
+      batchResultsModal: document.getElementById('batch-results-modal'),
+      batchResultsClose: document.getElementById('batch-results-close'),
+      batchResultsOk: document.getElementById('batch-results-ok'),
+      batchSummary: document.getElementById('batch-summary'),
+      batchResultsBody: document.getElementById('batch-results-body'),
+      batchExportCSV: document.getElementById('batch-export-csv'),
+      batchExportPDF: document.getElementById('batch-export-pdf'),
     };
   }
 
@@ -183,6 +203,54 @@ export class UI {
       }
     });
 
+    // Calculate all rooms
+    this.elements.btnCalculateAll.addEventListener('click', () => {
+      if (this.onCalculateAll) {
+        this.onCalculateAll();
+      }
+    });
+
+    // Export CSV
+    this.elements.btnExportCSV.addEventListener('click', () => {
+      if (this.onExportCSV) {
+        this.onExportCSV();
+      }
+    });
+
+    // Export PDF
+    this.elements.btnExportPDF.addEventListener('click', () => {
+      if (this.onExportPDF) {
+        this.onExportPDF();
+      }
+    });
+
+    // Batch results modal
+    this.elements.batchResultsClose.addEventListener('click', () => {
+      this.elements.batchResultsModal.classList.add('hidden');
+    });
+
+    this.elements.batchResultsOk.addEventListener('click', () => {
+      this.elements.batchResultsModal.classList.add('hidden');
+    });
+
+    this.elements.batchResultsModal.addEventListener('click', (e) => {
+      if (e.target === this.elements.batchResultsModal) {
+        this.elements.batchResultsModal.classList.add('hidden');
+      }
+    });
+
+    this.elements.batchExportCSV.addEventListener('click', () => {
+      if (this.onExportCSV) {
+        this.onExportCSV();
+      }
+    });
+
+    this.elements.batchExportPDF.addEventListener('click', () => {
+      if (this.onExportPDF) {
+        this.onExportPDF();
+      }
+    });
+
     // Panel toggle
     this.elements.panelToggle.addEventListener('click', () => {
       this.elements.sidePanel.classList.toggle('collapsed');
@@ -246,6 +314,11 @@ export class UI {
             this.onDisplayModeChange();
           }
           break;
+        case 'a':
+          if (!this.elements.btnCalculateAll.disabled && this.onCalculateAll) {
+            this.onCalculateAll();
+          }
+          break;
         case 'escape':
           // Deselect room
           this.elements.roomSelect.value = '';
@@ -307,6 +380,15 @@ export class UI {
     this.elements.roomSelect.disabled = false;
     this.elements.btnExport.disabled = false;
     this.elements.btnDisplayMode.disabled = false;
+    this.elements.btnCalculateAll.disabled = false;
+  }
+
+  /**
+   * Enable export buttons (after batch analysis)
+   */
+  enableExports() {
+    this.elements.btnExportCSV.disabled = false;
+    this.elements.btnExportPDF.disabled = false;
   }
 
   /**
@@ -568,5 +650,83 @@ export class UI {
         console.warn('Failed to load settings');
       }
     }
+  }
+
+  /**
+   * Show batch results modal
+   * @param {Array} results - Batch analysis results
+   * @param {Object} summary - Summary statistics
+   */
+  showBatchResults(results, summary) {
+    this.batchResults = results;
+
+    // Update summary
+    const summaryClass = (passing, total) => {
+      const ratio = passing / total;
+      if (ratio >= 0.8) return 'good';
+      if (ratio >= 0.5) return 'warning';
+      return 'poor';
+    };
+
+    this.elements.batchSummary.innerHTML = `
+      <div class="summary-stat">
+        <div class="stat-value">${summary.totalRooms}</div>
+        <div class="stat-label">Rooms Analyzed</div>
+      </div>
+      <div class="summary-stat ${summaryClass(summary.passing, summary.successfulAnalyses)}">
+        <div class="stat-value">${summary.passing}/${summary.successfulAnalyses}</div>
+        <div class="stat-label">Passing BREEAM</div>
+      </div>
+      <div class="summary-stat">
+        <div class="stat-value">${summary.overallAvgDF.toFixed(2)}%</div>
+        <div class="stat-label">Overall Avg DF</div>
+      </div>
+      <div class="summary-stat ${summary.complianceRate >= 80 ? 'good' : summary.complianceRate >= 50 ? 'warning' : 'poor'}">
+        <div class="stat-value">${summary.complianceRate.toFixed(0)}%</div>
+        <div class="stat-label">Compliant Area</div>
+      </div>
+    `;
+
+    // Update table
+    const getValueClass = (value, threshold1, threshold2) => {
+      if (value >= threshold2) return 'value-good';
+      if (value >= threshold1) return 'value-warning';
+      return 'value-poor';
+    };
+
+    const rows = results.map(r => {
+      if (!r.success) {
+        return `
+          <tr>
+            <td>${r.room.name}</td>
+            <td>${r.room.floorArea.toFixed(1)}</td>
+            <td>${r.windows.length}</td>
+            <td colspan="3">Analysis failed</td>
+            <td><span class="compliance-badge fail">ERROR</span></td>
+            <td class="recommendation-text">${r.error || 'Failed'}</td>
+          </tr>
+        `;
+      }
+
+      const complianceClass = r.compliance?.status || 'fail';
+
+      return `
+        <tr>
+          <td>${r.room.name}</td>
+          <td>${r.room.floorArea.toFixed(1)}</td>
+          <td>${r.windows.length}</td>
+          <td class="${getValueClass(r.stats.average, 2, 5)}">${r.stats.average.toFixed(2)}%</td>
+          <td class="${getValueClass(r.stats.min, 0.6, 1)}">${r.stats.min.toFixed(2)}%</td>
+          <td class="${getValueClass(r.stats.above2, 50, 80)}">${r.stats.above2.toFixed(0)}%</td>
+          <td><span class="compliance-badge ${complianceClass}">${complianceClass.toUpperCase()}</span></td>
+          <td class="recommendation-text">${r.recommendation}</td>
+        </tr>
+      `;
+    }).join('');
+
+    this.elements.batchResultsBody.innerHTML = rows;
+
+    // Show modal
+    this.elements.batchResultsModal.classList.remove('hidden');
   }
 }

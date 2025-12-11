@@ -10,6 +10,13 @@ import { RoomSelector } from './components/RoomSelector.js';
 import { WindowDetector } from './components/WindowDetector.js';
 import { DaylightCalculator } from './analysis/DaylightCalculator.js';
 import { createHeatmapMesh, createRoomOutline, createWindowIndicators } from './visualisation/Heatmap.js';
+import {
+  runBatchAnalysis,
+  generateBatchSummary,
+  exportToCSV,
+  exportGridDataToCSV,
+  generateReportHTML,
+} from './analysis/BatchAnalysis.js';
 
 /**
  * Main application class
@@ -26,6 +33,8 @@ class DaylightLab {
     this.currentRoom = null;
     this.currentWindows = [];
     this.calculationResults = null;
+    this.batchResults = null;
+    this.batchSummary = null;
   }
 
   /**
@@ -81,6 +90,13 @@ class DaylightLab {
 
     // Display mode change callback
     this.ui.onDisplayModeChange = () => this._handleDisplayModeChange();
+
+    // Batch analysis callback
+    this.ui.onCalculateAll = () => this._handleCalculateAll();
+
+    // Export callbacks
+    this.ui.onExportCSV = () => this._handleExportCSV();
+    this.ui.onExportPDF = () => this._handleExportPDF();
   }
 
   /**
@@ -341,6 +357,127 @@ class DaylightLab {
       hidden: 'Building hidden',
     };
     this.ui.setStatus(modeNames[newMode] || 'Display mode changed');
+  }
+
+  /**
+   * Handle calculate all rooms
+   * @private
+   */
+  async _handleCalculateAll() {
+    if (!this.roomSelector) {
+      this.ui.setStatus('Please load an IFC file first', 'error');
+      return;
+    }
+
+    const rooms = this.roomSelector.getRooms();
+    if (rooms.length === 0) {
+      this.ui.setStatus('No rooms found in model', 'error');
+      return;
+    }
+
+    try {
+      const settings = this.ui.getSettings();
+
+      this.ui.showLoading('Starting batch analysis...', 0);
+
+      // Run batch analysis
+      this.batchResults = await runBatchAnalysis(
+        rooms,
+        this.windowDetector,
+        {
+          gridSpacing: settings.gridSpacing,
+          workPlaneHeight: settings.workPlaneHeight,
+          reflectances: settings.reflectances,
+        },
+        (message, percent) => {
+          this.ui.showLoading(message, percent);
+        }
+      );
+
+      // Generate summary
+      this.batchSummary = generateBatchSummary(this.batchResults);
+
+      this.ui.hideLoading();
+
+      // Show results modal
+      this.ui.showBatchResults(this.batchResults, this.batchSummary);
+
+      // Enable export buttons
+      this.ui.enableExports();
+
+      const passRate = ((this.batchSummary.passing / this.batchSummary.successfulAnalyses) * 100).toFixed(0);
+      this.ui.setStatus(`Batch analysis complete - ${passRate}% rooms passing`);
+
+      console.log('Batch results:', this.batchSummary);
+
+    } catch (error) {
+      console.error('Batch analysis error:', error);
+      this.ui.hideLoading();
+      this.ui.setStatus(`Error: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Handle CSV export
+   * @private
+   */
+  _handleExportCSV() {
+    if (!this.batchResults || this.batchResults.length === 0) {
+      this.ui.setStatus('No results to export - run batch analysis first', 'error');
+      return;
+    }
+
+    try {
+      // Export summary CSV
+      const csv = exportToCSV(this.batchResults);
+
+      // Create download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `daylightlab-results-${Date.now()}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      this.ui.setStatus('CSV exported successfully');
+
+    } catch (error) {
+      console.error('CSV export error:', error);
+      this.ui.setStatus('Export failed', 'error');
+    }
+  }
+
+  /**
+   * Handle PDF export
+   * @private
+   */
+  _handleExportPDF() {
+    if (!this.batchResults || this.batchResults.length === 0) {
+      this.ui.setStatus('No results to export - run batch analysis first', 'error');
+      return;
+    }
+
+    try {
+      // Generate HTML report
+      const html = generateReportHTML(this.batchResults, this.batchSummary);
+
+      // Open in new window for printing
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(html);
+      printWindow.document.close();
+
+      // Trigger print dialog after a short delay
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+
+      this.ui.setStatus('PDF report opened - use browser print to save');
+
+    } catch (error) {
+      console.error('PDF export error:', error);
+      this.ui.setStatus('Export failed', 'error');
+    }
   }
 }
 

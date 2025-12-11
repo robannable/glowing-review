@@ -24,6 +24,9 @@
         <button id="btn-calculate" class="toolbar-btn" disabled title="Calculate daylight (C)">
           <span class="btn-icon">☀️</span> Calculate
         </button>
+        <button id="btn-calculate-all" class="toolbar-btn" disabled title="Calculate all rooms (A)">
+          <span class="btn-icon">📊</span> All Rooms
+        </button>
         <div class="toolbar-divider"></div>
         <button id="btn-view-2d" class="toolbar-btn" disabled title="2D Plan View (2)">2D</button>
         <button id="btn-view-3d" class="toolbar-btn active" disabled title="3D View (3)">3D</button>
@@ -34,6 +37,9 @@
         </button>
       </div>
       <div class="toolbar-right">
+        <button id="btn-export-csv" class="toolbar-btn" disabled title="Export CSV data">📄 CSV</button>
+        <button id="btn-export-pdf" class="toolbar-btn" disabled title="Export PDF report">📑 PDF</button>
+        <div class="toolbar-divider"></div>
         <button id="btn-settings" class="toolbar-btn" title="Settings">⚙️</button>
         <button id="btn-export" class="toolbar-btn" disabled title="Export Image">📷</button>
       </div>
@@ -190,6 +196,45 @@
       </div>
       <div class="modal-footer">
         <button id="settings-save" class="btn-primary">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Results Modal -->
+  <div id="batch-results-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Daylight Analysis Results</h2>
+        <button class="modal-close" id="batch-results-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="batch-summary" id="batch-summary">
+          <!-- Summary stats will be inserted here -->
+        </div>
+        <div class="batch-table-container">
+          <table class="batch-results-table" id="batch-results-table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Area (m²)</th>
+                <th>Windows</th>
+                <th>Avg DF</th>
+                <th>Min DF</th>
+                <th>≥2% Area</th>
+                <th>Compliance</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody id="batch-results-body">
+              <!-- Results will be inserted here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="batch-export-csv" class="toolbar-btn">📄 Export CSV</button>
+        <button id="batch-export-pdf" class="toolbar-btn">📑 Export PDF</button>
+        <button id="batch-results-ok" class="btn-primary">Close</button>
       </div>
     </div>
   </div>
