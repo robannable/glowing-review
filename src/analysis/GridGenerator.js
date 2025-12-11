@@ -24,6 +24,7 @@ export function generateGrid(floorPolygon, options = {}) {
     spacing = DEFAULT_GRID_SPACING,
     workPlaneHeight = DEFAULT_WORK_PLANE_HEIGHT,
     wallOffset = DEFAULT_WALL_OFFSET,
+    floorLevel = 0, // Room floor level in world coordinates
   } = options;
 
   if (!floorPolygon || floorPolygon.length < 3) {
@@ -34,6 +35,9 @@ export function generateGrid(floorPolygon, options = {}) {
   const bounds = calculateBoundingBox(floorPolygon);
   const grid = [];
 
+  // Calculate absolute Y position: floor level + work plane height
+  const absoluteY = floorLevel + workPlaneHeight;
+
   // Inset the polygon to create wall offset
   const insetPolygon = offsetPolygon(floorPolygon, -wallOffset);
 
@@ -42,13 +46,13 @@ export function generateGrid(floorPolygon, options = {}) {
     // Room too small for offset, use original polygon with reduced offset
     const smallerInset = offsetPolygon(floorPolygon, -wallOffset / 2);
     if (smallerInset && smallerInset.length >= 3) {
-      return generateGridInPolygon(smallerInset, bounds, spacing, workPlaneHeight);
+      return generateGridInPolygon(smallerInset, bounds, spacing, absoluteY);
     }
     // If still invalid, use original polygon
-    return generateGridInPolygon(floorPolygon, bounds, spacing, workPlaneHeight);
+    return generateGridInPolygon(floorPolygon, bounds, spacing, absoluteY);
   }
 
-  return generateGridInPolygon(insetPolygon, bounds, spacing, workPlaneHeight);
+  return generateGridInPolygon(insetPolygon, bounds, spacing, absoluteY);
 }
 
 /**
@@ -56,11 +60,11 @@ export function generateGrid(floorPolygon, options = {}) {
  * @param {Array} polygon - Polygon vertices
  * @param {Object} bounds - Bounding box of original polygon
  * @param {number} spacing - Grid spacing
- * @param {number} workPlaneHeight - Height of work plane
+ * @param {number} absoluteY - Absolute Y position for grid points (floor level + work plane height)
  * @returns {Array} Array of grid points
  * @private
  */
-function generateGridInPolygon(polygon, bounds, spacing, workPlaneHeight) {
+function generateGridInPolygon(polygon, bounds, spacing, absoluteY) {
   const grid = [];
 
   // Generate regular grid within bounds
@@ -73,7 +77,7 @@ function generateGridInPolygon(polygon, bounds, spacing, workPlaneHeight) {
         grid.push({
           position: {
             x: x,
-            y: workPlaneHeight, // Y is up in Three.js
+            y: absoluteY, // Y is up in Three.js (floor level + work plane height)
             z: y, // Z is the horizontal plane
           },
           // Results to be calculated
@@ -107,6 +111,10 @@ export function generateGridFromBoundingBox(boundingBox, options = {}) {
 
   const grid = [];
 
+  // Use bounding box minY as floor level
+  const floorLevel = boundingBox.minY || 0;
+  const absoluteY = floorLevel + workPlaneHeight;
+
   const minX = boundingBox.minX + wallOffset;
   const maxX = boundingBox.maxX - wallOffset;
   const minZ = boundingBox.minZ + wallOffset;
@@ -118,7 +126,7 @@ export function generateGridFromBoundingBox(boundingBox, options = {}) {
     grid.push({
       position: {
         x: (boundingBox.minX + boundingBox.maxX) / 2,
-        y: workPlaneHeight,
+        y: absoluteY,
         z: (boundingBox.minZ + boundingBox.maxZ) / 2,
       },
       daylightFactor: null,
@@ -133,7 +141,7 @@ export function generateGridFromBoundingBox(boundingBox, options = {}) {
       grid.push({
         position: {
           x: x,
-          y: workPlaneHeight,
+          y: absoluteY,
           z: z,
         },
         daylightFactor: null,

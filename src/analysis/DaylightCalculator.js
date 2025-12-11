@@ -43,10 +43,14 @@ export class DaylightCalculator {
     // Step 1: Generate analysis grid
     this._reportProgress('Generating grid...', 0);
 
+    // Get room floor level from bounding box
+    const floorLevel = this.room.boundingBox?.minY || 0;
+
     if (this.room.floorPolygon && this.room.floorPolygon.length >= 3) {
       this.grid = generateGrid(this.room.floorPolygon, {
         spacing: this.options.gridSpacing,
         workPlaneHeight: this.options.workPlaneHeight,
+        floorLevel: floorLevel,
       });
     } else if (this.room.boundingBox) {
       this.grid = generateGridFromBoundingBox(this.room.boundingBox, {
