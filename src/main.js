@@ -35,6 +35,11 @@ class DaylightLab {
     this.calculationResults = null;
     this.batchResults = null;
     this.batchSummary = null;
+
+    // Comparison data
+    this.baselineFileName = null;
+    this.baselineResults = null;
+    this.baselineSummary = null;
   }
 
   /**
@@ -97,6 +102,20 @@ class DaylightLab {
     // Export callbacks
     this.ui.onExportCSV = () => this._handleExportCSV();
     this.ui.onExportPDF = () => this._handleExportPDF();
+
+    // Section cut callbacks
+    this.ui.onSectionToggle = () => this._handleSectionToggle();
+    this.ui.onSectionChange = (options) => this._handleSectionChange(options);
+
+    // Sun path callback
+    this.ui.onSunPathToggle = () => this._handleSunPathToggle();
+
+    // Comparison callback
+    this.ui.onCompareFile = (file) => this._handleCompareFile(file);
+
+    // Annotation callbacks
+    this.ui.onAnnotationModeToggle = (enabled) => this._handleAnnotationModeToggle(enabled);
+    this.ui.onAnnotationSave = (position, text, color) => this._handleAnnotationSave(position, text, color);
   }
 
   /**
@@ -397,6 +416,11 @@ class DaylightLab {
       // Generate summary
       this.batchSummary = generateBatchSummary(this.batchResults);
 
+      // Store as baseline for comparison
+      this.baselineResults = this.batchResults;
+      this.baselineSummary = this.batchSummary;
+      this.baselineFileName = this.ifcLoader.currentFileName || 'Baseline Model';
+
       this.ui.hideLoading();
 
       // Show results modal
@@ -478,6 +502,241 @@ class DaylightLab {
       console.error('PDF export error:', error);
       this.ui.setStatus('Export failed', 'error');
     }
+  }
+
+  /**
+   * Handle section cut toggle
+   * @private
+   */
+  _handleSectionToggle() {
+    if (this.ui.sectionEnabled) {
+      // Disable section cut
+      this.viewer.disableSectionCut();
+      this.ui.hideSectionControls();
+      this.ui.setStatus('Section cut disabled');
+    } else {
+      // Enable section cut
+      const axis = document.getElementById('section-axis').value;
+      this.viewer.enableSectionCut(axis, 0.5);
+      const bounds = this.viewer.getSectionBounds();
+      this.ui.showSectionControls(bounds);
+      this.ui.setStatus('Section cut enabled - use slider to adjust');
+    }
+  }
+
+  /**
+   * Handle section cut changes (axis or position)
+   * @param {Object} options - { axis, position }
+   * @private
+   */
+  _handleSectionChange(options) {
+    if (options.axis) {
+      // Axis changed - re-enable with new axis
+      this.viewer.disableSectionCut();
+      this.viewer.enableSectionCut(options.axis, 0.5);
+      const bounds = this.viewer.getSectionBounds();
+      this.ui.updateSectionValue(bounds.current);
+      document.getElementById('section-slider').value = 50;
+    }
+
+    if (options.position !== undefined) {
+      // Position changed
+      this.viewer.setSectionPosition(options.position);
+      const bounds = this.viewer.getSectionBounds();
+      this.ui.updateSectionValue(bounds.current);
+    }
+  }
+
+  /**
+   * Handle sun path toggle
+   * @private
+   */
+  _handleSunPathToggle() {
+    const settings = this.ui.getSettings();
+    const isVisible = this.viewer.toggleSunPath({
+      latitude: settings.location.latitude,
+      longitude: settings.location.longitude,
+      date: new Date(),
+    });
+
+    this.ui.setSunPathActive(isVisible);
+
+    if (isVisible) {
+      this.ui.setStatus(`Sun path shown for ${settings.location.latitude.toFixed(1)}°N, ${settings.location.longitude.toFixed(1)}°E`);
+    } else {
+      this.ui.setStatus('Sun path hidden');
+    }
+  }
+
+  /**
+   * Handle comparison file selection
+   * @param {File} file - Comparison IFC file
+   * @private
+   */
+  async _handleCompareFile(file) {
+    // Check if we have baseline results
+    if (!this.baselineResults || this.baselineResults.length === 0) {
+      this.ui.setStatus('Run "All Rooms" analysis first to create baseline', 'error');
+      return;
+    }
+
+    try {
+      this.ui.showLoading('Loading comparison file...', 0);
+
+      // Create a temporary IFC loader for the comparison file
+      const comparisonLoader = new IFCLoader();
+      comparisonLoader.onProgress = (message, percent) => {
+        this.ui.showLoading(message, percent * 0.3); // First 30% for loading
+      };
+
+      // Load the comparison file
+      await comparisonLoader.loadFile(file);
+
+      // Create temporary room selector and window detector
+      const tempRoomSelector = new RoomSelector(null, comparisonLoader);
+      tempRoomSelector.init();
+
+      const tempWindowDetector = new WindowDetector(comparisonLoader);
+      tempWindowDetector.init();
+
+      const comparisonRooms = tempRoomSelector.getRooms();
+
+      if (comparisonRooms.length === 0) {
+        this.ui.hideLoading();
+        this.ui.setStatus('No rooms found in comparison file', 'error');
+        return;
+      }
+
+      // Run batch analysis on comparison model
+      const settings = this.ui.getSettings();
+
+      const comparisonResults = await runBatchAnalysis(
+        comparisonRooms,
+        tempWindowDetector,
+        {
+          gridSpacing: settings.gridSpacing,
+          workPlaneHeight: settings.workPlaneHeight,
+          reflectances: settings.reflectances,
+        },
+        (message, percent) => {
+          this.ui.showLoading(`Comparison: ${message}`, 30 + percent * 0.7);
+        }
+      );
+
+      const comparisonSummary = generateBatchSummary(comparisonResults);
+
+      // Calculate comparison summary
+      let improved = 0;
+      let worsened = 0;
+      let unchanged = 0;
+
+      this.baselineResults.forEach(baseline => {
+        if (!baseline.success) return;
+
+        const comp = comparisonResults.find(r => r.room.name === baseline.room.name);
+        if (!comp || !comp.success) {
+          unchanged++;
+          return;
+        }
+
+        const diff = comp.stats.average - baseline.stats.average;
+        if (Math.abs(diff) < 0.1) {
+          unchanged++;
+        } else if (diff > 0) {
+          improved++;
+        } else {
+          worsened++;
+        }
+      });
+
+      const comparisonData = {
+        baselineName: this.baselineFileName,
+        comparisonName: file.name,
+        baselineResults: this.baselineResults,
+        comparisonResults: comparisonResults,
+        summary: {
+          baselineAvgDF: this.baselineSummary.overallAvgDF,
+          comparisonAvgDF: comparisonSummary.overallAvgDF,
+          baselinePassing: this.baselineSummary.passing,
+          comparisonPassing: comparisonSummary.passing,
+          baselineComplianceRate: this.baselineSummary.complianceRate,
+          comparisonComplianceRate: comparisonSummary.complianceRate,
+          improved,
+          worsened,
+          unchanged,
+        },
+      };
+
+      this.ui.hideLoading();
+      this.ui.showComparisonResults(comparisonData);
+
+      const changeText = improved > worsened ? 'improved' : improved < worsened ? 'worsened' : 'unchanged';
+      this.ui.setStatus(`Comparison complete - Overall ${changeText} (${improved} improved, ${worsened} worsened)`);
+
+    } catch (error) {
+      console.error('Comparison error:', error);
+      this.ui.hideLoading();
+      this.ui.setStatus(`Comparison failed: ${error.message}`, 'error');
+    }
+  }
+
+  /**
+   * Handle annotation mode toggle
+   * @param {boolean} enabled - Whether annotation mode is enabled
+   * @private
+   */
+  _handleAnnotationModeToggle(enabled) {
+    if (enabled) {
+      this.ui.setStatus('Annotation mode: Click on model to place a note');
+
+      // Add click listener to viewport
+      this._annotationClickHandler = (event) => {
+        if (!this.ui.annotationMode) return;
+
+        // Only handle left clicks
+        if (event.button !== 0) return;
+
+        // Check if we clicked on an existing annotation
+        const existingAnnotation = this.viewer.getAnnotationAt(event);
+        if (existingAnnotation) {
+          // Show tooltip or delete option
+          if (confirm(`Delete annotation: "${existingAnnotation.text}"?`)) {
+            this.viewer.removeAnnotation(existingAnnotation.id);
+            this.ui.setStatus('Annotation deleted');
+          }
+          return;
+        }
+
+        // Get click position on model
+        const position = this.viewer.getClickPosition(event);
+        if (position) {
+          this.ui.showAnnotationModal(position);
+        }
+      };
+
+      this.viewer.renderer.domElement.addEventListener('click', this._annotationClickHandler);
+    } else {
+      this.ui.setStatus('Annotation mode disabled');
+
+      // Remove click listener
+      if (this._annotationClickHandler) {
+        this.viewer.renderer.domElement.removeEventListener('click', this._annotationClickHandler);
+        this._annotationClickHandler = null;
+      }
+    }
+  }
+
+  /**
+   * Handle saving a new annotation
+   * @param {Object} position - 3D position
+   * @param {string} text - Annotation text
+   * @param {string} color - Marker color
+   * @private
+   */
+  _handleAnnotationSave(position, text, color) {
+    const annotation = this.viewer.addAnnotation(position, text, color);
+    this.ui.setStatus(`Annotation added: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
+    console.log('Annotation added:', annotation);
   }
 }
 

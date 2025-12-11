@@ -21,6 +21,7 @@ export class IFCLoader {
     this.modelID = null;
     this.isInitialized = false;
     this.onProgress = null;
+    this.currentFileName = null;
 
     this.meshes = new Map();
     this.spaces = [];
@@ -55,6 +56,7 @@ export class IFCLoader {
       await this.init();
     }
 
+    this.currentFileName = file.name;
     this._reportProgress('Reading file...', 0);
 
     // Read file as array buffer
