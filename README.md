@@ -43,6 +43,9 @@ Open http://localhost:5173 and drag-drop an IFC file to begin.
 | C | Calculate (selected room) |
 | A | Analyze all rooms |
 | V | Toggle display mode (solid/wireframe/hidden) |
+| S | Toggle section cut |
+| P | Toggle sun path |
+| N | Toggle annotation mode |
 | 2 | 2D plan view |
 | 3 | 3D perspective view |
 | R | Reset camera view |
@@ -110,10 +113,10 @@ daylightlab/
 
 ### Planned Features
 
-- [ ] **Section Cuts** — Slice through the model to view heatmaps from different angles
-- [ ] **Sun Path Visualization** — Show sun position throughout the day
-- [ ] **Comparison Mode** — Load two IFC versions side-by-side to compare design changes
-- [ ] **Annotations** — Add notes to specific points for client presentations
+- [x] **Section Cuts** — Slice through the model to view heatmaps from different angles
+- [x] **Sun Path Visualization** — Show sun position throughout the day
+- [x] **Comparison Mode** — Load two IFC versions side-by-side to compare design changes
+- [x] **Annotations** — Add notes to specific points for client presentations
 
 ### Future Development
 

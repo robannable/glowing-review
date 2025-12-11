@@ -35,6 +35,20 @@
         <button id="btn-display-mode" class="toolbar-btn" disabled title="Toggle building visibility (V)">
           <span class="btn-icon">🏠</span> <span id="display-mode-text">Solid</span>
         </button>
+        <div class="toolbar-divider"></div>
+        <button id="btn-section" class="toolbar-btn" disabled title="Section cut (S)">
+          <span class="btn-icon">✂️</span> Section
+        </button>
+        <button id="btn-sun-path" class="toolbar-btn" disabled title="Sun path (P)">
+          <span class="btn-icon">🌅</span> Sun Path
+        </button>
+        <div class="toolbar-divider"></div>
+        <button id="btn-compare" class="toolbar-btn" disabled title="Compare with another model">
+          <span class="btn-icon">⚖️</span> Compare
+        </button>
+        <button id="btn-annotate" class="toolbar-btn" disabled title="Add annotation (N)">
+          <span class="btn-icon">📌</span> Annotate
+        </button>
       </div>
       <div class="toolbar-right">
         <button id="btn-export-csv" class="toolbar-btn" disabled title="Export CSV data">📄 CSV</button>
@@ -66,6 +80,28 @@
           </div>
         </div>
         <canvas id="canvas"></canvas>
+
+        <!-- Section Control Panel -->
+        <div id="section-controls" class="viewport-controls hidden">
+          <div class="control-header">
+            <span>Section Cut</span>
+            <button id="section-close" class="control-close">&times;</button>
+          </div>
+          <div class="control-body">
+            <div class="control-row">
+              <label>Axis:</label>
+              <select id="section-axis">
+                <option value="y" selected>Horizontal (Y)</option>
+                <option value="x">Vertical X</option>
+                <option value="z">Vertical Z</option>
+              </select>
+            </div>
+            <div class="control-row">
+              <label>Height: <span id="section-value">0.0</span>m</label>
+              <input type="range" id="section-slider" min="0" max="100" value="50" step="1">
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Side panel -->
@@ -137,8 +173,9 @@
     </footer>
   </div>
 
-  <!-- Hidden file input -->
+  <!-- Hidden file inputs -->
   <input type="file" id="file-input" accept=".ifc" style="display: none;">
+  <input type="file" id="compare-file-input" accept=".ifc" style="display: none;">
 
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal hidden">
@@ -235,6 +272,74 @@
         <button id="batch-export-csv" class="toolbar-btn">📄 Export CSV</button>
         <button id="batch-export-pdf" class="toolbar-btn">📑 Export PDF</button>
         <button id="batch-results-ok" class="btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Annotation Input Modal -->
+  <div id="annotation-modal" class="modal hidden">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>Add Annotation</h2>
+        <button class="modal-close" id="annotation-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="annotation-text">Note:</label>
+          <textarea id="annotation-text" rows="3" placeholder="Enter your annotation..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="annotation-color">Color:</label>
+          <select id="annotation-color">
+            <option value="#ff4444">Red</option>
+            <option value="#44ff44">Green</option>
+            <option value="#4444ff">Blue</option>
+            <option value="#ffaa00" selected>Orange</option>
+            <option value="#aa44ff">Purple</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="annotation-cancel" class="toolbar-btn">Cancel</button>
+        <button id="annotation-save" class="btn-primary">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison Results Modal -->
+  <div id="comparison-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2>Model Comparison</h2>
+        <button class="modal-close" id="comparison-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="comparison-header" id="comparison-header">
+          <!-- Model names will be inserted here -->
+        </div>
+        <div class="comparison-summary" id="comparison-summary">
+          <!-- Summary comparison will be inserted here -->
+        </div>
+        <div class="batch-table-container">
+          <table class="batch-results-table" id="comparison-table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Baseline Avg DF</th>
+                <th>Comparison Avg DF</th>
+                <th>Change</th>
+                <th>Baseline Compliance</th>
+                <th>Comparison Compliance</th>
+              </tr>
+            </thead>
+            <tbody id="comparison-body">
+              <!-- Comparison results will be inserted here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="comparison-close-btn" class="btn-primary">Close</button>
       </div>
     </div>
   </div>

@@ -690,6 +690,271 @@ body {
   max-width: 150px;
 }
 
+/* Viewport Controls (Section Cut, etc.) */
+.viewport-controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: var(--bg-medium);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-width: 200px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.control-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.control-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.control-close:hover {
+  color: var(--text-primary);
+}
+
+.control-body {
+  padding: 12px;
+}
+
+.control-row {
+  margin-bottom: 12px;
+}
+
+.control-row:last-child {
+  margin-bottom: 0;
+}
+
+.control-row label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.control-row select,
+.control-row input[type="range"] {
+  width: 100%;
+}
+
+.control-row select {
+  padding: 6px 8px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.control-row input[type="range"] {
+  -webkit-appearance: none;
+  height: 6px;
+  background: var(--bg-dark);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.control-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* Active toolbar button state */
+.toolbar-btn.active-feature {
+  background: var(--primary);
+  color: white;
+}
+
+.toolbar-btn.active-feature:hover {
+  background: #3a7bc8;
+}
+
+/* Comparison Modal Styles */
+.comparison-header {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+}
+
+.comparison-header .model-info {
+  text-align: center;
+}
+
+.comparison-header .model-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.comparison-header .model-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.comparison-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.comparison-stat {
+  background: var(--bg-dark);
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.comparison-stat .stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.comparison-stat .stat-values {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.comparison-stat .stat-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.comparison-stat .stat-arrow {
+  font-size: 16px;
+  color: var(--text-secondary);
+}
+
+.comparison-stat .stat-value.baseline {
+  color: var(--text-secondary);
+}
+
+.comparison-stat .stat-value.improved {
+  color: #4caf50;
+}
+
+.comparison-stat .stat-value.worsened {
+  color: #f44336;
+}
+
+.comparison-stat .stat-value.unchanged {
+  color: var(--text-primary);
+}
+
+/* Change indicator in table */
+.change-positive {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.change-negative {
+  color: #f44336;
+  font-weight: 600;
+}
+
+.change-neutral {
+  color: var(--text-secondary);
+}
+
+/* Annotation Modal Styles */
+.modal-small {
+  max-width: 400px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-group textarea {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.form-group select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* Annotation mode indicator */
+.annotation-mode #viewport {
+  cursor: crosshair;
+}
+
+.annotation-mode .toolbar-btn#btn-annotate {
+  background: var(--primary);
+  color: white;
+}
+
+/* Annotation marker tooltip */
+.annotation-tooltip {
+  position: absolute;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+  max-width: 200px;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
 /* Utilities */
 .hidden {
   display: none !important;

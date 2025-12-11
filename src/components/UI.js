@@ -26,9 +26,22 @@ export class UI {
     this.onExportPDF = null;
     this.onSettingsSave = null;
     this.onDisplayModeChange = null;
+    this.onSectionToggle = null;
+    this.onSectionChange = null;
+    this.onSunPathToggle = null;
+    this.onCompareFile = null;
+    this.onAnnotationModeToggle = null;
+    this.onAnnotationSave = null;
 
     // Batch results data
     this.batchResults = null;
+
+    // Section state
+    this.sectionEnabled = false;
+
+    // Annotation state
+    this.annotationMode = false;
+    this.pendingAnnotationPosition = null;
   }
 
   /**
@@ -108,6 +121,34 @@ export class UI {
       batchResultsBody: document.getElementById('batch-results-body'),
       batchExportCSV: document.getElementById('batch-export-csv'),
       batchExportPDF: document.getElementById('batch-export-pdf'),
+
+      // Section and Sun Path controls
+      btnSection: document.getElementById('btn-section'),
+      btnSunPath: document.getElementById('btn-sun-path'),
+      sectionControls: document.getElementById('section-controls'),
+      sectionAxis: document.getElementById('section-axis'),
+      sectionSlider: document.getElementById('section-slider'),
+      sectionValue: document.getElementById('section-value'),
+      sectionClose: document.getElementById('section-close'),
+
+      // Comparison
+      btnCompare: document.getElementById('btn-compare'),
+      compareFileInput: document.getElementById('compare-file-input'),
+      comparisonModal: document.getElementById('comparison-modal'),
+      comparisonClose: document.getElementById('comparison-close'),
+      comparisonCloseBtn: document.getElementById('comparison-close-btn'),
+      comparisonHeader: document.getElementById('comparison-header'),
+      comparisonSummary: document.getElementById('comparison-summary'),
+      comparisonBody: document.getElementById('comparison-body'),
+
+      // Annotations
+      btnAnnotate: document.getElementById('btn-annotate'),
+      annotationModal: document.getElementById('annotation-modal'),
+      annotationClose: document.getElementById('annotation-close'),
+      annotationCancel: document.getElementById('annotation-cancel'),
+      annotationSave: document.getElementById('annotation-save'),
+      annotationText: document.getElementById('annotation-text'),
+      annotationColor: document.getElementById('annotation-color'),
     };
   }
 
@@ -251,6 +292,102 @@ export class UI {
       }
     });
 
+    // Section cut toggle
+    this.elements.btnSection.addEventListener('click', () => {
+      if (this.onSectionToggle) {
+        this.onSectionToggle();
+      }
+    });
+
+    // Section axis change
+    this.elements.sectionAxis.addEventListener('change', (e) => {
+      if (this.onSectionChange) {
+        this.onSectionChange({ axis: e.target.value });
+      }
+    });
+
+    // Section slider change
+    this.elements.sectionSlider.addEventListener('input', (e) => {
+      const position = parseFloat(e.target.value) / 100;
+      if (this.onSectionChange) {
+        this.onSectionChange({ position });
+      }
+    });
+
+    // Section close button
+    this.elements.sectionClose.addEventListener('click', () => {
+      if (this.onSectionToggle) {
+        this.onSectionToggle(); // Toggle off
+      }
+    });
+
+    // Sun path toggle
+    this.elements.btnSunPath.addEventListener('click', () => {
+      if (this.onSunPathToggle) {
+        this.onSunPathToggle();
+      }
+    });
+
+    // Compare button
+    this.elements.btnCompare.addEventListener('click', () => {
+      this.elements.compareFileInput.click();
+    });
+
+    // Compare file input
+    this.elements.compareFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && this.onCompareFile) {
+        this.onCompareFile(file);
+      }
+      e.target.value = ''; // Reset for re-selection
+    });
+
+    // Comparison modal close
+    this.elements.comparisonClose.addEventListener('click', () => {
+      this.elements.comparisonModal.classList.add('hidden');
+    });
+
+    this.elements.comparisonCloseBtn.addEventListener('click', () => {
+      this.elements.comparisonModal.classList.add('hidden');
+    });
+
+    this.elements.comparisonModal.addEventListener('click', (e) => {
+      if (e.target === this.elements.comparisonModal) {
+        this.elements.comparisonModal.classList.add('hidden');
+      }
+    });
+
+    // Annotation mode toggle
+    this.elements.btnAnnotate.addEventListener('click', () => {
+      this.toggleAnnotationMode();
+    });
+
+    // Annotation modal events
+    this.elements.annotationClose.addEventListener('click', () => {
+      this.hideAnnotationModal();
+    });
+
+    this.elements.annotationCancel.addEventListener('click', () => {
+      this.hideAnnotationModal();
+    });
+
+    this.elements.annotationSave.addEventListener('click', () => {
+      const text = this.elements.annotationText.value.trim();
+      const color = this.elements.annotationColor.value;
+
+      if (text && this.pendingAnnotationPosition && this.onAnnotationSave) {
+        this.onAnnotationSave(this.pendingAnnotationPosition, text, color);
+      }
+
+      this.hideAnnotationModal();
+    });
+
+    this.elements.annotationModal.addEventListener('click', (e) => {
+      if (e.target === this.elements.annotationModal) {
+        this.hideAnnotationModal();
+      }
+    });
+
     // Panel toggle
     this.elements.panelToggle.addEventListener('click', () => {
       this.elements.sidePanel.classList.toggle('collapsed');
@@ -319,6 +456,21 @@ export class UI {
             this.onCalculateAll();
           }
           break;
+        case 's':
+          if (!this.elements.btnSection.disabled && this.onSectionToggle) {
+            this.onSectionToggle();
+          }
+          break;
+        case 'p':
+          if (!this.elements.btnSunPath.disabled && this.onSunPathToggle) {
+            this.onSunPathToggle();
+          }
+          break;
+        case 'n':
+          if (!this.elements.btnAnnotate.disabled) {
+            this.toggleAnnotationMode();
+          }
+          break;
         case 'escape':
           // Deselect room
           this.elements.roomSelect.value = '';
@@ -381,6 +533,10 @@ export class UI {
     this.elements.btnExport.disabled = false;
     this.elements.btnDisplayMode.disabled = false;
     this.elements.btnCalculateAll.disabled = false;
+    this.elements.btnSection.disabled = false;
+    this.elements.btnSunPath.disabled = false;
+    this.elements.btnCompare.disabled = false;
+    this.elements.btnAnnotate.disabled = false;
   }
 
   /**
@@ -402,6 +558,99 @@ export class UI {
       hidden: 'Hidden',
     };
     this.elements.displayModeText.textContent = labels[mode] || 'Solid';
+  }
+
+  /**
+   * Show section controls panel
+   * @param {Object} bounds - { min, max, current } values for slider
+   */
+  showSectionControls(bounds) {
+    this.sectionEnabled = true;
+    this.elements.sectionControls.classList.remove('hidden');
+    this.elements.btnSection.classList.add('active-feature');
+
+    // Update slider display
+    if (bounds) {
+      this.updateSectionValue(bounds.current);
+    }
+  }
+
+  /**
+   * Hide section controls panel
+   */
+  hideSectionControls() {
+    this.sectionEnabled = false;
+    this.elements.sectionControls.classList.add('hidden');
+    this.elements.btnSection.classList.remove('active-feature');
+    this.elements.sectionSlider.value = 50;
+  }
+
+  /**
+   * Update section value display
+   * @param {number} value - Current section height in meters
+   */
+  updateSectionValue(value) {
+    this.elements.sectionValue.textContent = value.toFixed(1);
+  }
+
+  /**
+   * Toggle sun path button state
+   * @param {boolean} active - Whether sun path is visible
+   */
+  setSunPathActive(active) {
+    if (active) {
+      this.elements.btnSunPath.classList.add('active-feature');
+    } else {
+      this.elements.btnSunPath.classList.remove('active-feature');
+    }
+  }
+
+  /**
+   * Toggle annotation mode
+   */
+  toggleAnnotationMode() {
+    this.annotationMode = !this.annotationMode;
+
+    if (this.annotationMode) {
+      document.body.classList.add('annotation-mode');
+      this.elements.btnAnnotate.classList.add('active-feature');
+    } else {
+      document.body.classList.remove('annotation-mode');
+      this.elements.btnAnnotate.classList.remove('active-feature');
+    }
+
+    if (this.onAnnotationModeToggle) {
+      this.onAnnotationModeToggle(this.annotationMode);
+    }
+  }
+
+  /**
+   * Exit annotation mode without toggling
+   */
+  exitAnnotationMode() {
+    this.annotationMode = false;
+    document.body.classList.remove('annotation-mode');
+    this.elements.btnAnnotate.classList.remove('active-feature');
+  }
+
+  /**
+   * Show annotation input modal
+   * @param {Object} position - 3D position for annotation
+   */
+  showAnnotationModal(position) {
+    this.pendingAnnotationPosition = position;
+    this.elements.annotationText.value = '';
+    this.elements.annotationColor.value = '#ffaa00';
+    this.elements.annotationModal.classList.remove('hidden');
+    this.elements.annotationText.focus();
+  }
+
+  /**
+   * Hide annotation modal
+   */
+  hideAnnotationModal() {
+    this.elements.annotationModal.classList.add('hidden');
+    this.pendingAnnotationPosition = null;
   }
 
   /**
@@ -728,5 +977,114 @@ export class UI {
 
     // Show modal
     this.elements.batchResultsModal.classList.remove('hidden');
+  }
+
+  /**
+   * Show comparison results modal
+   * @param {Object} comparison - Comparison data with baseline, comparison results and deltas
+   */
+  showComparisonResults(comparison) {
+    const { baselineName, comparisonName, baselineResults, comparisonResults, summary } = comparison;
+
+    // Update header with model names
+    this.elements.comparisonHeader.innerHTML = `
+      <div class="model-info">
+        <div class="model-label">Baseline</div>
+        <div class="model-name">${baselineName}</div>
+      </div>
+      <div class="model-info">
+        <div class="model-label">Comparison</div>
+        <div class="model-name">${comparisonName}</div>
+      </div>
+    `;
+
+    // Calculate change class
+    const getChangeClass = (baseline, comparison) => {
+      const diff = comparison - baseline;
+      if (Math.abs(diff) < 0.1) return 'unchanged';
+      return diff > 0 ? 'improved' : 'worsened';
+    };
+
+    // Update summary
+    this.elements.comparisonSummary.innerHTML = `
+      <div class="comparison-stat">
+        <div class="stat-label">Average DF</div>
+        <div class="stat-values">
+          <span class="stat-value baseline">${summary.baselineAvgDF.toFixed(2)}%</span>
+          <span class="stat-arrow">→</span>
+          <span class="stat-value ${getChangeClass(summary.baselineAvgDF, summary.comparisonAvgDF)}">${summary.comparisonAvgDF.toFixed(2)}%</span>
+        </div>
+      </div>
+      <div class="comparison-stat">
+        <div class="stat-label">Passing Rooms</div>
+        <div class="stat-values">
+          <span class="stat-value baseline">${summary.baselinePassing}</span>
+          <span class="stat-arrow">→</span>
+          <span class="stat-value ${getChangeClass(summary.baselinePassing, summary.comparisonPassing)}">${summary.comparisonPassing}</span>
+        </div>
+      </div>
+      <div class="comparison-stat">
+        <div class="stat-label">Compliance Rate</div>
+        <div class="stat-values">
+          <span class="stat-value baseline">${summary.baselineComplianceRate.toFixed(0)}%</span>
+          <span class="stat-arrow">→</span>
+          <span class="stat-value ${getChangeClass(summary.baselineComplianceRate, summary.comparisonComplianceRate)}">${summary.comparisonComplianceRate.toFixed(0)}%</span>
+        </div>
+      </div>
+      <div class="comparison-stat">
+        <div class="stat-label">Rooms Improved</div>
+        <div class="stat-values">
+          <span class="stat-value improved">${summary.improved}</span>
+          <span class="stat-value worsened">${summary.worsened}</span>
+          <span class="stat-value unchanged">${summary.unchanged}</span>
+        </div>
+      </div>
+    `;
+
+    // Build comparison table rows
+    const rows = baselineResults.map(baselineRoom => {
+      const compRoom = comparisonResults.find(r => r.room.name === baselineRoom.room.name);
+
+      if (!baselineRoom.success) {
+        return `
+          <tr>
+            <td>${baselineRoom.room.name}</td>
+            <td>Error</td>
+            <td>${compRoom?.success ? compRoom.stats.average.toFixed(2) + '%' : 'Error'}</td>
+            <td>-</td>
+            <td><span class="compliance-badge fail">ERROR</span></td>
+            <td>${compRoom?.success ? `<span class="compliance-badge ${compRoom.compliance?.status || 'fail'}">${(compRoom.compliance?.status || 'fail').toUpperCase()}</span>` : '<span class="compliance-badge fail">ERROR</span>'}</td>
+          </tr>
+        `;
+      }
+
+      const baselineDF = baselineRoom.stats.average;
+      const compDF = compRoom?.success ? compRoom.stats.average : null;
+      const change = compDF !== null ? compDF - baselineDF : null;
+
+      const changeClass = change === null ? 'change-neutral' :
+        Math.abs(change) < 0.1 ? 'change-neutral' :
+        change > 0 ? 'change-positive' : 'change-negative';
+
+      const changeText = change === null ? '-' :
+        Math.abs(change) < 0.1 ? '0' :
+        (change > 0 ? '+' : '') + change.toFixed(2) + '%';
+
+      return `
+        <tr>
+          <td>${baselineRoom.room.name}</td>
+          <td>${baselineDF.toFixed(2)}%</td>
+          <td>${compDF !== null ? compDF.toFixed(2) + '%' : 'N/A'}</td>
+          <td class="${changeClass}">${changeText}</td>
+          <td><span class="compliance-badge ${baselineRoom.compliance?.status || 'fail'}">${(baselineRoom.compliance?.status || 'fail').toUpperCase()}</span></td>
+          <td>${compRoom?.success ? `<span class="compliance-badge ${compRoom.compliance?.status || 'fail'}">${(compRoom.compliance?.status || 'fail').toUpperCase()}</span>` : '-'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    this.elements.comparisonBody.innerHTML = rows;
+
+    // Show modal
+    this.elements.comparisonModal.classList.remove('hidden');
   }
 }
