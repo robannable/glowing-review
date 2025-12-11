@@ -249,6 +249,8 @@ body {
   position: relative;
   transition: width 0.3s ease, margin-right 0.3s ease;
   flex-shrink: 0;
+  overflow: visible;
+  z-index: 5;
 }
 
 #side-panel.collapsed {
@@ -278,6 +280,7 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
   transition: all 0.2s ease;
+  z-index: 10;
 }
 
 .panel-toggle:hover {
