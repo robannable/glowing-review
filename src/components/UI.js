@@ -22,6 +22,7 @@ export class UI {
     this.onResetView = null;
     this.onExport = null;
     this.onSettingsSave = null;
+    this.onDisplayModeChange = null;
   }
 
   /**
@@ -49,6 +50,8 @@ export class UI {
       btnReset: document.getElementById('btn-reset'),
       btnSettings: document.getElementById('btn-settings'),
       btnExport: document.getElementById('btn-export'),
+      btnDisplayMode: document.getElementById('btn-display-mode'),
+      displayModeText: document.getElementById('display-mode-text'),
       roomSelect: document.getElementById('room-select'),
 
       // Viewport
@@ -173,6 +176,13 @@ export class UI {
       }
     });
 
+    // Display mode toggle
+    this.elements.btnDisplayMode.addEventListener('click', () => {
+      if (this.onDisplayModeChange) {
+        this.onDisplayModeChange();
+      }
+    });
+
     // Panel toggle
     this.elements.panelToggle.addEventListener('click', () => {
       this.elements.sidePanel.classList.toggle('collapsed');
@@ -229,6 +239,11 @@ export class UI {
         case 'c':
           if (!this.elements.btnCalculate.disabled && this.onCalculate) {
             this.onCalculate();
+          }
+          break;
+        case 'v':
+          if (!this.elements.btnDisplayMode.disabled && this.onDisplayModeChange) {
+            this.onDisplayModeChange();
           }
           break;
         case 'escape':
@@ -291,6 +306,20 @@ export class UI {
     this.elements.btnReset.disabled = false;
     this.elements.roomSelect.disabled = false;
     this.elements.btnExport.disabled = false;
+    this.elements.btnDisplayMode.disabled = false;
+  }
+
+  /**
+   * Update display mode button text
+   * @param {string} mode - 'solid', 'wireframe', or 'hidden'
+   */
+  setDisplayModeText(mode) {
+    const labels = {
+      solid: 'Solid',
+      wireframe: 'Wireframe',
+      hidden: 'Hidden',
+    };
+    this.elements.displayModeText.textContent = labels[mode] || 'Solid';
   }
 
   /**

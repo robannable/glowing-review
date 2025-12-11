@@ -78,6 +78,9 @@ class DaylightLab {
 
     // Settings save callback
     this.ui.onSettingsSave = (settings) => this._handleSettingsSave(settings);
+
+    // Display mode change callback
+    this.ui.onDisplayModeChange = () => this._handleDisplayModeChange();
   }
 
   /**
@@ -322,6 +325,22 @@ class DaylightLab {
     if (this.calculationResults && this.currentRoom) {
       // Could show a dialog here asking if user wants to recalculate
     }
+  }
+
+  /**
+   * Handle display mode change
+   * @private
+   */
+  _handleDisplayModeChange() {
+    const newMode = this.viewer.cycleDisplayMode();
+    this.ui.setDisplayModeText(newMode);
+
+    const modeNames = {
+      solid: 'Solid view',
+      wireframe: 'Wireframe view',
+      hidden: 'Building hidden',
+    };
+    this.ui.setStatus(modeNames[newMode] || 'Display mode changed');
   }
 }
 
