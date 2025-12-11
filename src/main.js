@@ -107,9 +107,6 @@ class DaylightLab {
     this.ui.onSectionToggle = () => this._handleSectionToggle();
     this.ui.onSectionChange = (options) => this._handleSectionChange(options);
 
-    // Sun path callback
-    this.ui.onSunPathToggle = (date, forceUpdate) => this._handleSunPathToggle(date, forceUpdate);
-
     // Comparison callback
     this.ui.onCompareFile = (file) => this._handleCompareFile(file);
 
@@ -544,44 +541,6 @@ class DaylightLab {
       this.viewer.setSectionPosition(options.position);
       const bounds = this.viewer.getSectionBounds();
       this.ui.updateSectionValue(bounds.current);
-    }
-  }
-
-  /**
-   * Handle sun path toggle
-   * @param {Date} date - Date for sun path calculation
-   * @param {boolean} forceUpdate - Force update even if already visible
-   * @private
-   */
-  _handleSunPathToggle(date = new Date(), forceUpdate = false) {
-    const settings = this.ui.getSettings();
-
-    // If forceUpdate, clear and re-show
-    if (forceUpdate && this.ui.sunPathEnabled) {
-      this.viewer.clearSunPath();
-      this.viewer.showSunPath({
-        latitude: settings.location.latitude,
-        longitude: settings.location.longitude,
-        date: date,
-      });
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      this.ui.setStatus(`Sun path updated: ${monthNames[date.getMonth()]} ${date.getDate()}`);
-      return;
-    }
-
-    const isVisible = this.viewer.toggleSunPath({
-      latitude: settings.location.latitude,
-      longitude: settings.location.longitude,
-      date: date,
-    });
-
-    this.ui.setSunPathActive(isVisible, settings.location);
-
-    if (isVisible) {
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      this.ui.setStatus(`Sun path: ${monthNames[date.getMonth()]} ${date.getDate()} at ${settings.location.latitude.toFixed(1)}°N`);
-    } else {
-      this.ui.setStatus('Sun path hidden');
     }
   }
 
