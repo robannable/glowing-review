@@ -35,6 +35,9 @@ export class RoomSelector {
    * @private
    */
   _createRoomMeshes() {
+    // Skip if no viewer (e.g., during comparison analysis)
+    if (!this.viewer) return;
+
     this.viewer.clearRooms();
     this.roomMeshes.clear();
 
@@ -76,6 +79,9 @@ export class RoomSelector {
    * @private
    */
   _setupClickHandler() {
+    // Skip if no viewer (e.g., during comparison analysis)
+    if (!this.viewer) return;
+
     const canvas = this.viewer.renderer.domElement;
 
     canvas.addEventListener('click', (event) => {
