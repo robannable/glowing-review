@@ -31,6 +31,10 @@ export class Viewer {
 
     this.is2DView = false;
     this.savedCameraState = null;
+
+    // Display mode: 'solid', 'wireframe', 'hidden'
+    this.displayMode = 'solid';
+    this.originalMaterials = new Map();
   }
 
   /**
@@ -458,6 +462,73 @@ export class Viewer {
   screenshot() {
     this.renderer.render(this.scene, this.camera);
     return this.renderer.domElement.toDataURL('image/png');
+  }
+
+  /**
+   * Set the display mode for the building model
+   * @param {string} mode - 'solid', 'wireframe', or 'hidden'
+   */
+  setDisplayMode(mode) {
+    if (this.displayMode === mode) return;
+
+    this.displayMode = mode;
+
+    this.modelGroup.traverse((object) => {
+      if (object.isMesh) {
+        switch (mode) {
+          case 'solid':
+            // Restore original material
+            if (this.originalMaterials.has(object.uuid)) {
+              object.material = this.originalMaterials.get(object.uuid);
+            }
+            object.visible = true;
+            break;
+
+          case 'wireframe':
+            // Store original material if not already stored
+            if (!this.originalMaterials.has(object.uuid)) {
+              this.originalMaterials.set(object.uuid, object.material);
+            }
+            // Create wireframe material
+            object.material = new THREE.MeshBasicMaterial({
+              color: 0x888888,
+              wireframe: true,
+              transparent: true,
+              opacity: 0.5,
+            });
+            object.visible = true;
+            break;
+
+          case 'hidden':
+            // Store original material if not already stored
+            if (!this.originalMaterials.has(object.uuid)) {
+              this.originalMaterials.set(object.uuid, object.material);
+            }
+            object.visible = false;
+            break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Get current display mode
+   * @returns {string} Current display mode
+   */
+  getDisplayMode() {
+    return this.displayMode;
+  }
+
+  /**
+   * Cycle through display modes: solid -> wireframe -> hidden -> solid
+   * @returns {string} New display mode
+   */
+  cycleDisplayMode() {
+    const modes = ['solid', 'wireframe', 'hidden'];
+    const currentIndex = modes.indexOf(this.displayMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    this.setDisplayMode(modes[nextIndex]);
+    return this.displayMode;
   }
 
   /**
