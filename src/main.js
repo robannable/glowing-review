@@ -163,7 +163,24 @@ class DaylightLab {
       this.ui.hideLoading();
       this.ui.setStatus(`Loaded: ${file.name} - ${rooms.length} rooms found`);
 
-      console.log(`Model loaded: ${rooms.length} rooms, ${this.windowDetector.getAllWindows().length} windows`);
+      const allWindows = this.windowDetector.getAllWindows();
+      console.log(`Model loaded: ${rooms.length} rooms, ${allWindows.length} windows`);
+
+      // Debug: log room details
+      if (rooms.length === 0) {
+        console.warn('No rooms found in IFC file - check if IfcSpace elements exist');
+      } else {
+        console.log('Rooms found:', rooms.map(r => ({
+          name: r.name,
+          area: r.floorArea?.toFixed(2),
+          hasPolygon: !!r.floorPolygon,
+          hasBoundingBox: !!r.boundingBox
+        })));
+      }
+
+      if (allWindows.length === 0) {
+        console.warn('No windows found in IFC file - check if IfcWindow elements exist');
+      }
 
     } catch (error) {
       console.error('Error loading file:', error);
@@ -211,6 +228,18 @@ class DaylightLab {
     // Find and highlight windows
     this.currentWindows = this.windowDetector.findRoomWindows(room);
     this.windowDetector.highlightWindows();
+
+    // Debug: log windows for this room
+    console.log(`Room "${room.name}" windows:`, this.currentWindows.length);
+    if (this.currentWindows.length === 0) {
+      console.warn('No windows found for selected room - check room boundaries');
+    } else {
+      console.log('Windows:', this.currentWindows.map(w => ({
+        centre: w.centre,
+        normal: w.normal,
+        size: `${w.overallWidth?.toFixed(2)} x ${w.overallHeight?.toFixed(2)}`,
+      })));
+    }
 
     // Show window info
     this.ui.showWindowsInfo(this.currentWindows, room.floorArea);
@@ -261,13 +290,34 @@ class DaylightLab {
       // Run calculation
       const results = await this.calculator.calculate();
 
+      // Debug logging
+      console.log('Calculation results:', {
+        gridLength: results.grid?.length,
+        statistics: results.statistics,
+        mode: results.mode,
+      });
+
       this.calculationResults = results;
+
+      // Check if results are valid
+      if (!results.grid || results.grid.length === 0) {
+        console.warn('No grid points generated - check room geometry');
+        this.ui.setStatus('Warning: No grid points generated', 'error');
+      }
+
+      if (!results.statistics || results.statistics.count === 0) {
+        console.warn('No valid calculation results - check windows');
+        this.ui.setStatus('Warning: No valid results calculated', 'error');
+      }
 
       // Create heatmap
       this.viewer.clearHeatmap();
       const heatmap = createHeatmapMesh(results.grid, settings.gridSpacing);
+      console.log('Heatmap created:', heatmap ? 'yes' : 'no (null)');
       if (heatmap) {
         this.viewer.addHeatmap(heatmap);
+      } else {
+        console.warn('Heatmap not created - check grid data');
       }
 
       // Add room outline for context
