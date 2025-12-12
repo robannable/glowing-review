@@ -144,13 +144,11 @@ daylightlab/
 
 ### Future Development
 
-- [ ] **Spatial Daylight Autonomy (sDA)** — Annual metric showing % of space achieving 300 lux for 50% of occupied hours
-- [ ] **Annual Sunlight Exposure (ASE)** — Glare risk metric
-- [ ] **Useful Daylight Illuminance (UDI)** — Balance between too dark and too bright
+- [x] **Enhanced Ray Tracing** — Monte Carlo hemisphere sampling for improved accuracy
 - [ ] **External Obstructions** — Import surrounding buildings from IFC or simple box inputs
 - [ ] **Horizon Shading** — Account for external obstructions blocking sky
 - [ ] **Web Workers** — Move calculations off main thread for responsive UI
-- [ ] **GPU Ray Tracing** — WebGPU for faster, more accurate sky visibility calculation
+- [ ] **GPU Ray Tracing** — WebGPU for faster calculation with more samples
 
 ### Long-term Vision
 
@@ -159,14 +157,22 @@ daylightlab/
 - [ ] **Real-time Preview** — Update heatmap as you modify window sizes in ArchiCAD
 - [ ] **BIM Write-back** — Export daylight data as IFC properties
 
+### Enhanced Accuracy Mode
+Enable in Settings for more accurate calculations:
+- **Monte Carlo sky sampling** — Traces 144 rays per grid point toward the sky hemisphere
+- **Ray-window intersection** — Proper geometric intersection testing
+- **Multi-surface IRC** — Position-dependent reflected component from ceiling, walls, and floor
+- **Window proximity boost** — Enhanced light near window reveals
+
+Standard mode uses the faster BRE split-flux method; Enhanced mode is slower but more accurate for complex room geometries.
+
 ## Limitations
 
 This is an early-stage design tool, not for compliance documentation:
 
-- Uses simplified daylight factor calculation (BRE split-flux method)
-- Assumes CIE overcast sky
+- Assumes CIE overcast sky (no direct sunlight)
 - Does not account for external obstructions (yet)
-- Limited to diffuse light (no direct sun)
+- Standard mode uses simplified BRE split-flux method
 
 For detailed compliance calculations, use validated tools like VELUX Daylight Visualizer or Radiance.
 

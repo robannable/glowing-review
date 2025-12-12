@@ -5,6 +5,8 @@
 import { generateGrid, generateGridFromBoundingBox, estimateGridCount } from './GridGenerator.js';
 import { calculateSkyComponent } from './SkyComponent.js';
 import { calculateIRC, calculatePositionalIRC } from './ReflectedComponent.js';
+import { calculateEnhancedSkyComponent } from './EnhancedSkyComponent.js';
+import { calculateFullEnhancedIRC } from './EnhancedIRC.js';
 import { DEFAULT_REFLECTANCES, DEFAULT_GRID_SPACING, DEFAULT_WORK_PLANE_HEIGHT } from '../utils/constants.js';
 
 export class DaylightCalculator {
@@ -23,6 +25,9 @@ export class DaylightCalculator {
       workPlaneHeight: options.workPlaneHeight || DEFAULT_WORK_PLANE_HEIGHT,
       reflectances: options.reflectances || DEFAULT_REFLECTANCES,
       usePositionalIRC: options.usePositionalIRC !== false,
+      // Enhanced mode options
+      enhancedMode: options.enhancedMode || false,
+      sampleCount: options.sampleCount || 144, // For Monte Carlo sampling
     };
 
     this.grid = [];
@@ -63,14 +68,41 @@ export class DaylightCalculator {
       throw new Error('Could not generate analysis grid for room');
     }
 
-    console.log(`Generated ${this.grid.length} grid points`);
+    const mode = this.options.enhancedMode ? 'enhanced' : 'standard';
+    console.log(`Generated ${this.grid.length} grid points (${mode} mode)`);
 
-    // Step 2: Calculate IRC (once for the whole room)
+    // Use enhanced or standard calculation
+    if (this.options.enhancedMode) {
+      await this._calculateEnhanced();
+    } else {
+      await this._calculateStandard();
+    }
+
+    // Step 4: Calculate statistics
+    this._reportProgress('Calculating statistics...', 95);
+    this.statistics = this._calculateStatistics();
+
+    this._reportProgress('Complete', 100);
+
+    return {
+      grid: this.grid,
+      statistics: this.statistics,
+      baseIRC: this.baseIRC,
+      mode: mode,
+    };
+  }
+
+  /**
+   * Standard calculation using BRE split-flux method
+   * @private
+   */
+  async _calculateStandard() {
+    // Calculate IRC (once for the whole room)
     this._reportProgress('Calculating reflected component...', 10);
     this.baseIRC = calculateIRC(this.room, this.windows, this.options.reflectances);
     console.log(`Base IRC: ${this.baseIRC.toFixed(2)}%`);
 
-    // Step 3: Calculate SC for each grid point
+    // Calculate SC for each grid point
     const totalPoints = this.grid.length;
     let processedPoints = 0;
 
@@ -113,18 +145,74 @@ export class DaylightCalculator {
         await this._sleep(0);
       }
     }
+  }
 
-    // Step 4: Calculate statistics
-    this._reportProgress('Calculating statistics...', 95);
-    this.statistics = this._calculateStatistics();
+  /**
+   * Enhanced calculation using Monte Carlo sampling
+   * More accurate but slower
+   * @private
+   */
+  async _calculateEnhanced() {
+    this._reportProgress('Enhanced mode: Monte Carlo sampling...', 10);
 
-    this._reportProgress('Complete', 100);
+    const totalPoints = this.grid.length;
+    let processedPoints = 0;
 
-    return {
-      grid: this.grid,
-      statistics: this.statistics,
-      baseIRC: this.baseIRC,
+    // Enhanced options
+    const scOptions = {
+      sampleCount: this.options.sampleCount,
+      stratified: true,
     };
+
+    const ircOptions = {
+      reflectances: this.options.reflectances,
+      applyProximityBoost: true,
+    };
+
+    for (let i = 0; i < totalPoints; i++) {
+      if (this.cancelled) {
+        throw new Error('Calculation cancelled');
+      }
+
+      const point = this.grid[i];
+
+      // Calculate enhanced Sky Component with Monte Carlo sampling
+      point.skyComponent = calculateEnhancedSkyComponent(
+        point.position,
+        this.windows,
+        scOptions
+      );
+
+      // Calculate enhanced IRC with multi-surface analysis
+      point.irc = calculateFullEnhancedIRC(
+        point.position,
+        this.room,
+        this.windows,
+        ircOptions
+      );
+
+      // Total Daylight Factor
+      point.daylightFactor = point.skyComponent + point.irc;
+
+      processedPoints++;
+
+      // Report progress less frequently for enhanced mode (slower calculation)
+      if (processedPoints % 5 === 0 || processedPoints === totalPoints) {
+        const progress = 10 + (processedPoints / totalPoints) * 80;
+        this._reportProgress(
+          `Enhanced calc: ${processedPoints}/${totalPoints} points...`,
+          progress
+        );
+
+        // Yield to main thread
+        await this._sleep(0);
+      }
+    }
+
+    // Calculate average IRC for reporting
+    const ircValues = this.grid.map(p => p.irc);
+    this.baseIRC = ircValues.reduce((a, b) => a + b, 0) / ircValues.length;
+    console.log(`Average enhanced IRC: ${this.baseIRC.toFixed(2)}%`);
   }
 
   /**

@@ -246,6 +246,7 @@ class DaylightLab {
           gridSpacing: settings.gridSpacing,
           workPlaneHeight: settings.workPlaneHeight,
           reflectances: settings.reflectances,
+          enhancedMode: settings.enhancedMode,
         }
       );
 
@@ -404,6 +405,7 @@ class DaylightLab {
           gridSpacing: settings.gridSpacing,
           workPlaneHeight: settings.workPlaneHeight,
           reflectances: settings.reflectances,
+          enhancedMode: settings.enhancedMode,
         },
         (message, percent) => {
           this.ui.showLoading(message, percent);
@@ -593,6 +595,7 @@ class DaylightLab {
           gridSpacing: settings.gridSpacing,
           workPlaneHeight: settings.workPlaneHeight,
           reflectances: settings.reflectances,
+          enhancedMode: settings.enhancedMode,
         },
         (message, percent) => {
           this.ui.showLoading(`Comparison: ${message}`, 30 + percent * 0.7);
