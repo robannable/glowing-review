@@ -64,8 +64,9 @@ export function calculateEnhancedSkyComponent(point, windows, options = {}) {
   }
 
   // Normalise and convert to percentage
-  // Factor of 100 for percentage, divided by π for hemisphere solid angle normalisation
-  const skyComponent = (totalContribution / totalWeight) * 100 / Math.PI;
+  // totalWeight ≈ 2π (hemisphere solid angle), so this gives the fraction of
+  // weighted sky luminance visible through windows, converted to percentage
+  const skyComponent = (totalContribution / totalWeight) * 100;
 
   return Math.max(0, skyComponent);
 }
