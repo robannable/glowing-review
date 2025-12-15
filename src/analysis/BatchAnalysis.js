@@ -223,6 +223,7 @@ export function generateBatchSummary(results) {
 export function exportToCSV(results) {
   const headers = [
     'Room Name',
+    'Long Name',
     'Floor Area (m²)',
     'Window Count',
     'Total Glazed Area (m²)',
@@ -243,6 +244,7 @@ export function exportToCSV(results) {
     if (!r.success) {
       return [
         r.room.name,
+        r.room.longName || '',
         r.room.floorArea.toFixed(2),
         r.windows.length,
         '', '', '', '', '', '', '', '', '', '',
@@ -256,6 +258,7 @@ export function exportToCSV(results) {
 
     return [
       r.room.name,
+      r.room.longName || '',
       r.room.floorArea.toFixed(2),
       r.windows.length,
       totalGlazed.toFixed(2),
