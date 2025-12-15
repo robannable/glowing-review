@@ -10,7 +10,9 @@ export class WindowDetector {
   constructor(ifcLoader) {
     this.ifcLoader = ifcLoader;
     this.allWindows = [];
+    this.allGlazedDoors = [];
     this.roomWindows = [];
+    this.roomGlazedDoors = [];
     this.highlightedMeshes = [];
     this.originalMaterials = new Map();
 
@@ -18,76 +20,88 @@ export class WindowDetector {
   }
 
   /**
-   * Initialize with windows from IFC
+   * Initialize with windows and glazed doors from IFC
    */
   init() {
     this.allWindows = this.ifcLoader.getWindows();
+    this.allGlazedDoors = this.ifcLoader.getGlazedDoors();
   }
 
   /**
-   * Find windows belonging to a room
+   * Find windows and glazed doors belonging to a room
    * @param {Object} room - Room object with boundingBox
-   * @returns {Array} Array of window objects
+   * @returns {Array} Array of window/glazed door objects (combined for daylight calculation)
    */
   findRoomWindows(room) {
     if (!room || !room.boundingBox) {
       this.roomWindows = [];
+      this.roomGlazedDoors = [];
       return [];
     }
 
-    // Expand room bounds to catch windows in walls
+    // Expand room bounds to catch windows/doors in walls
     const expandedBounds = expandBoundingBox(room.boundingBox, 0.5);
 
+    // Find windows in room
     this.roomWindows = this.allWindows.filter(window => {
-      // Check if window centre is within expanded room bounds
       return isPointInBox(window.centre, expandedBounds);
     });
 
-    // Determine window orientation relative to room
-    this._updateWindowOrientations(room);
+    // Find glazed doors in room
+    this.roomGlazedDoors = this.allGlazedDoors.filter(door => {
+      return isPointInBox(door.centre, expandedBounds);
+    });
 
-    return this.roomWindows;
+    // Combine windows and glazed doors for orientation update
+    const allGlazingSources = [...this.roomWindows, ...this.roomGlazedDoors];
+
+    // Determine orientation relative to room
+    this._updateWindowOrientations(room, allGlazingSources);
+
+    // Return combined array (glazed doors are treated as windows for daylight calc)
+    return allGlazingSources;
   }
 
   /**
-   * Update window orientations based on room geometry
+   * Update window/door orientations based on room geometry
    * @param {Object} room - Room object
+   * @param {Array} glazingSources - Array of windows and glazed doors
    * @private
    */
-  _updateWindowOrientations(room) {
+  _updateWindowOrientations(room, glazingSources) {
     if (!room.boundingBox) return;
 
     const roomCentreX = (room.boundingBox.minX + room.boundingBox.maxX) / 2;
     const roomCentreZ = (room.boundingBox.minZ + room.boundingBox.maxZ) / 2;
 
-    for (const window of this.roomWindows) {
-      // Determine which wall the window is on
-      const dx = window.centre.x - roomCentreX;
-      const dz = window.centre.z - roomCentreZ;
+    for (const item of glazingSources) {
+      // Determine which wall the window/door is on
+      const dx = item.centre.x - roomCentreX;
+      const dz = item.centre.z - roomCentreZ;
 
       // Update normal to point outward from room
       if (Math.abs(dx) > Math.abs(dz)) {
-        // Window is on east or west wall
+        // Item is on east or west wall
         if (dx > 0) {
-          window.normal = { x: 1, y: 0, z: 0 };
-          window.orientation = 'E';
+          item.normal = { x: 1, y: 0, z: 0 };
+          item.orientation = 'E';
         } else {
-          window.normal = { x: -1, y: 0, z: 0 };
-          window.orientation = 'W';
+          item.normal = { x: -1, y: 0, z: 0 };
+          item.orientation = 'W';
         }
       } else {
-        // Window is on north or south wall
+        // Item is on north or south wall
         if (dz > 0) {
-          window.normal = { x: 0, y: 0, z: 1 };
-          window.orientation = 'N';
+          item.normal = { x: 0, y: 0, z: 1 };
+          item.orientation = 'N';
         } else {
-          window.normal = { x: 0, y: 0, z: -1 };
-          window.orientation = 'S';
+          item.normal = { x: 0, y: 0, z: -1 };
+          item.orientation = 'S';
         }
       }
 
       // Recalculate vertices based on updated normal
-      this._updateWindowVertices(window);
+      this._updateWindowVertices(item);
     }
   }
 
@@ -121,31 +135,45 @@ export class WindowDetector {
   }
 
   /**
-   * Highlight windows in the 3D view
+   * Highlight windows and glazed doors in the 3D view
    */
   highlightWindows() {
     // Clear previous highlights
     this.clearHighlights();
 
+    // Highlight windows
     for (const window of this.roomWindows) {
       if (window.mesh) {
-        // Store original material
         this.originalMaterials.set(window.expressID, window.mesh.material);
-
-        // Apply highlight material
         window.mesh.material = this.highlightMaterial;
         this.highlightedMeshes.push(window.mesh);
+      }
+    }
+
+    // Highlight glazed doors
+    for (const door of this.roomGlazedDoors) {
+      if (door.mesh) {
+        this.originalMaterials.set(door.expressID, door.mesh.material);
+        door.mesh.material = this.highlightMaterial;
+        this.highlightedMeshes.push(door.mesh);
       }
     }
   }
 
   /**
-   * Clear window highlights
+   * Clear window and door highlights
    */
   clearHighlights() {
+    // Restore window materials
     for (const window of this.allWindows) {
       if (window.mesh && this.originalMaterials.has(window.expressID)) {
         window.mesh.material = this.originalMaterials.get(window.expressID);
+      }
+    }
+    // Restore glazed door materials
+    for (const door of this.allGlazedDoors) {
+      if (door.mesh && this.originalMaterials.has(door.expressID)) {
+        door.mesh.material = this.originalMaterials.get(door.expressID);
       }
     }
     this.originalMaterials.clear();
@@ -153,32 +181,35 @@ export class WindowDetector {
   }
 
   /**
-   * Get windows for current room
-   * @returns {Array} Array of window objects
+   * Get windows and glazed doors for current room (combined)
+   * @returns {Array} Array of window and glazed door objects
    */
   getRoomWindows() {
-    return this.roomWindows;
+    return [...this.roomWindows, ...this.roomGlazedDoors];
   }
 
   /**
-   * Get all windows
-   * @returns {Array} Array of all window objects
+   * Get all windows and glazed doors
+   * @returns {Array} Array of all window and glazed door objects
    */
   getAllWindows() {
-    return this.allWindows;
+    return [...this.allWindows, ...this.allGlazedDoors];
   }
 
   /**
-   * Calculate glazing statistics for room
+   * Calculate glazing statistics for room (windows + glazed doors)
    * @param {number} floorArea - Room floor area
    * @returns {Object} Glazing statistics
    */
   getGlazingStats(floorArea = 0) {
-    const totalArea = this.roomWindows.reduce((sum, w) => sum + w.area, 0);
-    const totalGlazedArea = this.roomWindows.reduce((sum, w) => sum + w.glazedArea, 0);
+    const allSources = [...this.roomWindows, ...this.roomGlazedDoors];
+    const totalArea = allSources.reduce((sum, w) => sum + w.area, 0);
+    const totalGlazedArea = allSources.reduce((sum, w) => sum + w.glazedArea, 0);
 
     return {
       windowCount: this.roomWindows.length,
+      glazedDoorCount: this.roomGlazedDoors.length,
+      totalCount: allSources.length,
       totalArea,
       totalGlazedArea,
       glazingToFloorRatio: floorArea > 0 ? (totalGlazedArea / floorArea) : 0,
@@ -192,5 +223,6 @@ export class WindowDetector {
     this.clearHighlights();
     this.highlightMaterial.dispose();
     this.roomWindows = [];
+    this.roomGlazedDoors = [];
   }
 }

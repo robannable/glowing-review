@@ -27,6 +27,7 @@ export class IFCLoader {
     this.meshes = new Map();
     this.spaces = [];
     this.windows = [];
+    this.glazedDoors = [];
     this.materials = createDefaultMaterials();
   }
 
@@ -83,10 +84,15 @@ export class IFCLoader {
     // Extract spaces (rooms)
     await this._extractSpaces();
 
-    this._reportProgress('Processing windows...', 85);
+    this._reportProgress('Processing windows...', 80);
 
     // Extract windows
     await this._extractWindows();
+
+    this._reportProgress('Processing glazed doors...', 90);
+
+    // Extract glazed doors
+    await this._extractGlazedDoors();
 
     this._reportProgress('Complete', 100);
 
@@ -590,6 +596,118 @@ export class IFCLoader {
   }
 
   /**
+   * Extract glazed doors (doors with sidelights or glass panels)
+   * @private
+   */
+  async _extractGlazedDoors() {
+    this.glazedDoors = [];
+
+    // Keywords that indicate glazed doors
+    const glazingKeywords = ['sidelight', 'glazed', 'glass', 'vision', 'lite', 'panel'];
+
+    try {
+      const doorIDs = this.ifcAPI.GetLineIDsWithType(this.modelID, IFCDOOR);
+
+      for (let i = 0; i < doorIDs.size(); i++) {
+        const doorID = doorIDs.get(i);
+        const door = this.ifcAPI.GetLine(this.modelID, doorID);
+        const doorName = door.Name?.value || '';
+
+        // Check door type for glazing indicators
+        let isGlazed = false;
+        let glazedRatio = 0;
+        let doorTypeName = '';
+
+        // Try to get door type info
+        try {
+          const typeRels = this.ifcAPI.GetLineIDsWithType(this.modelID, 781155140); // IFCRELDEFINESBYTYPE
+          for (let j = 0; j < typeRels.size(); j++) {
+            const rel = this.ifcAPI.GetLine(this.modelID, typeRels.get(j));
+            const relatedObjects = rel.RelatedObjects;
+
+            if (relatedObjects) {
+              for (let k = 0; k < relatedObjects.length; k++) {
+                if (relatedObjects[k].value === doorID) {
+                  const typeRef = rel.RelatingType;
+                  if (typeRef) {
+                    const doorType = this.ifcAPI.GetLine(this.modelID, typeRef.value);
+                    doorTypeName = doorType.Name?.value || '';
+
+                    // Check if door type indicates glazing
+                    const typeNameLower = doorTypeName.toLowerCase();
+                    if (glazingKeywords.some(keyword => typeNameLower.includes(keyword))) {
+                      isGlazed = true;
+                      // Estimate glazed ratio based on type
+                      if (typeNameLower.includes('sidelight')) {
+                        glazedRatio = 0.25; // Sidelight typically ~25% of door opening
+                      } else if (typeNameLower.includes('full') || typeNameLower.includes('vision')) {
+                        glazedRatio = 0.6; // Full glass door
+                      } else {
+                        glazedRatio = 0.3; // Partial glazing (e.g., top half)
+                      }
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+            if (isGlazed) break;
+          }
+        } catch (typeError) {
+          // Type lookup failed, continue with geometry analysis
+        }
+
+        // If not identified by type, check name
+        if (!isGlazed) {
+          const nameLower = doorName.toLowerCase();
+          if (glazingKeywords.some(keyword => nameLower.includes(keyword))) {
+            isGlazed = true;
+            glazedRatio = 0.3;
+          }
+        }
+
+        if (isGlazed) {
+          const mesh = this.meshes.get(doorID);
+          const doorData = {
+            expressID: doorID,
+            globalId: door.GlobalId?.value || '',
+            name: doorName || `Glazed Door ${this.glazedDoors.length + 1}`,
+            typeName: doorTypeName,
+            overallWidth: door.OverallWidth?.value || 0.9,
+            overallHeight: door.OverallHeight?.value || 2.1,
+            area: 0,
+            glazedArea: 0,
+            glazedRatio,
+            centre: { x: 0, y: 0, z: 0 },
+            normal: { x: 0, y: 1, z: 0 },
+            vertices: [],
+            transmittance: 0.7,
+            frameRatio: 0.2, // Doors typically have more frame
+            orientation: 'N',
+            sillHeight: 0,
+            mesh,
+            isDoor: true,
+          };
+
+          // Extract geometry
+          await this._extractWindowGeometry(doorData);
+
+          // Calculate glazed area
+          doorData.area = doorData.overallWidth * doorData.overallHeight;
+          doorData.glazedArea = doorData.area * doorData.glazedRatio * (1 - doorData.frameRatio);
+
+          this.glazedDoors.push(doorData);
+          console.log(`Found glazed door: ${doorData.name} (${doorTypeName}) - ${(doorData.glazedRatio * 100).toFixed(0)}% glazed`);
+        }
+      }
+    } catch (error) {
+      console.warn('Error extracting glazed doors:', error);
+    }
+
+    console.log(`Extracted ${this.glazedDoors.length} glazed doors`);
+  }
+
+  /**
    * Get all extracted spaces
    * @returns {Array} Array of space objects
    */
@@ -603,6 +721,14 @@ export class IFCLoader {
    */
   getWindows() {
     return this.windows;
+  }
+
+  /**
+   * Get all extracted glazed doors
+   * @returns {Array} Array of glazed door objects
+   */
+  getGlazedDoors() {
+    return this.glazedDoors;
   }
 
   /**
@@ -638,6 +764,7 @@ export class IFCLoader {
     this.meshes.clear();
     this.spaces = [];
     this.windows = [];
+    this.glazedDoors = [];
 
     // Dispose materials
     Object.values(this.materials).forEach(m => m.dispose());
