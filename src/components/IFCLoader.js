@@ -102,36 +102,109 @@ export class IFCLoader {
     // Get all meshes using web-ifc's geometry processing
     this.ifcAPI.StreamAllMeshes(this.modelID, (mesh) => {
       const placedGeometry = mesh.geometries;
+      const expressID = mesh.expressID;
+      const elementType = this._getElementType(expressID);
+      const material = this._getMaterialForType(elementType);
 
+      // Collect all geometries for this element (handles multi-casement windows)
+      const geometries = [];
       for (let i = 0; i < placedGeometry.size(); i++) {
         const geometry = placedGeometry.get(i);
-        const meshObj = this._createMesh(geometry);
-
-        if (meshObj) {
-          // Get element type for material
-          const expressID = mesh.expressID;
-          const elementType = this._getElementType(expressID);
-          meshObj.material = this._getMaterialForType(elementType);
-
-          meshObj.userData.expressID = expressID;
-          meshObj.userData.elementType = elementType;
-
-          // Store reference
-          this.meshes.set(expressID, meshObj);
-
-          group.add(meshObj);
+        const bufferGeom = this._createBufferGeometry(geometry);
+        if (bufferGeom) {
+          geometries.push(bufferGeom);
         }
+      }
+
+      if (geometries.length === 0) return;
+
+      // Merge multiple geometries into one mesh (e.g., multi-casement windows)
+      let finalGeometry;
+      if (geometries.length === 1) {
+        finalGeometry = geometries[0];
+      } else {
+        // Merge all geometries for this element
+        finalGeometry = this._mergeBufferGeometries(geometries);
+      }
+
+      if (finalGeometry) {
+        const meshObj = new THREE.Mesh(finalGeometry, material);
+        meshObj.castShadow = true;
+        meshObj.receiveShadow = true;
+        meshObj.userData.expressID = expressID;
+        meshObj.userData.elementType = elementType;
+
+        this.meshes.set(expressID, meshObj);
+        group.add(meshObj);
       }
     });
   }
 
   /**
-   * Create a Three.js mesh from web-ifc geometry
-   * @param {Object} placedGeometry - Placed geometry from web-ifc
-   * @returns {THREE.Mesh} Three.js mesh
+   * Merge multiple buffer geometries into one
+   * @param {THREE.BufferGeometry[]} geometries - Array of geometries to merge
+   * @returns {THREE.BufferGeometry} Merged geometry
    * @private
    */
-  _createMesh(placedGeometry) {
+  _mergeBufferGeometries(geometries) {
+    // Calculate total sizes
+    let totalPositions = 0;
+    let totalNormals = 0;
+    let totalIndices = 0;
+
+    for (const geom of geometries) {
+      totalPositions += geom.attributes.position.count * 3;
+      totalNormals += geom.attributes.normal.count * 3;
+      totalIndices += geom.index ? geom.index.count : 0;
+    }
+
+    const mergedPositions = new Float32Array(totalPositions);
+    const mergedNormals = new Float32Array(totalNormals);
+    const mergedIndices = new Uint32Array(totalIndices);
+
+    let positionOffset = 0;
+    let normalOffset = 0;
+    let indexOffset = 0;
+    let vertexOffset = 0;
+
+    for (const geom of geometries) {
+      // Copy positions
+      const positions = geom.attributes.position.array;
+      mergedPositions.set(positions, positionOffset);
+      positionOffset += positions.length;
+
+      // Copy normals
+      const normals = geom.attributes.normal.array;
+      mergedNormals.set(normals, normalOffset);
+      normalOffset += normals.length;
+
+      // Copy indices with offset
+      if (geom.index) {
+        const indices = geom.index.array;
+        for (let i = 0; i < indices.length; i++) {
+          mergedIndices[indexOffset + i] = indices[i] + vertexOffset;
+        }
+        indexOffset += indices.length;
+      }
+
+      vertexOffset += geom.attributes.position.count;
+    }
+
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(mergedNormals, 3));
+    merged.setIndex(new THREE.BufferAttribute(mergedIndices, 1));
+
+    return merged;
+  }
+
+  /**
+   * Create a Three.js BufferGeometry from web-ifc geometry
+   * @param {Object} placedGeometry - Placed geometry from web-ifc
+   * @returns {THREE.BufferGeometry} Three.js buffer geometry
+   * @private
+   */
+  _createBufferGeometry(placedGeometry) {
     const geometry = this.ifcAPI.GetGeometry(this.modelID, placedGeometry.geometryExpressID);
     const vertices = this.ifcAPI.GetVertexArray(geometry.GetVertexData(), geometry.GetVertexDataSize());
     const indices = this.ifcAPI.GetIndexArray(geometry.GetIndexData(), geometry.GetIndexDataSize());
@@ -166,12 +239,7 @@ export class IFCLoader {
     matrix.fromArray(placedGeometry.flatTransformation);
     bufferGeometry.applyMatrix4(matrix);
 
-    // Create mesh with default material
-    const mesh = new THREE.Mesh(bufferGeometry, this.materials.default);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-
-    return mesh;
+    return bufferGeometry;
   }
 
   /**
