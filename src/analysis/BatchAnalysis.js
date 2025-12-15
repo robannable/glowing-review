@@ -335,11 +335,19 @@ export function generateReportHTML(results, summary, projectInfo = {}) {
     }
   };
 
+  // Format room name with long name if available
+  const formatRoomName = (room) => {
+    if (room.longName) {
+      return `${room.name} - ${room.longName}`;
+    }
+    return room.name;
+  };
+
   const roomRows = results.map(r => {
     if (!r.success) {
       return `
         <tr>
-          <td>${r.room.name}</td>
+          <td>${formatRoomName(r.room)}</td>
           <td>${r.room.floorArea.toFixed(1)}</td>
           <td>${r.windows.length}</td>
           <td colspan="4">Analysis failed</td>
@@ -350,7 +358,7 @@ export function generateReportHTML(results, summary, projectInfo = {}) {
 
     return `
       <tr>
-        <td>${r.room.name}</td>
+        <td>${formatRoomName(r.room)}</td>
         <td>${r.room.floorArea.toFixed(1)}</td>
         <td>${r.windows.length}</td>
         <td>${r.stats.average.toFixed(2)}%</td>
