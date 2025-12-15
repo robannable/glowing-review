@@ -12,6 +12,7 @@ import {
   IFCWALLSTANDARDCASE,
   IFCSLAB,
   IFCPRODUCT,
+  IFCBUILDINGELEMENTPROXY,
 } from '../utils/constants.js';
 import { createDefaultMaterials } from '../utils/materials.js';
 
@@ -373,51 +374,80 @@ export class IFCLoader {
   }
 
   /**
-   * Extract IfcWindow entities
+   * Extract IfcWindow entities and ArchiCAD BuildingElementProxy windows
    * @private
    */
   async _extractWindows() {
     this.windows = [];
 
     try {
+      // First, try standard IFCWINDOW entities
       const windowIDs = this.ifcAPI.GetLineIDsWithType(this.modelID, IFCWINDOW);
 
       for (let i = 0; i < windowIDs.size(); i++) {
         const windowID = windowIDs.get(i);
         const window = this.ifcAPI.GetLine(this.modelID, windowID);
 
-        const windowData = {
-          expressID: windowID,
-          globalId: window.GlobalId?.value || '',
-          name: window.Name?.value || `Window ${i + 1}`,
-          overallWidth: window.OverallWidth?.value || 1.0,
-          overallHeight: window.OverallHeight?.value || 1.2,
-          area: 0,
-          glazedArea: 0,
-          centre: { x: 0, y: 0, z: 0 },
-          normal: { x: 0, y: 1, z: 0 },
-          vertices: [],
-          transmittance: 0.7,
-          frameRatio: 0.15,
-          orientation: 'N',
-          sillHeight: 0.9,
-          mesh: this.meshes.get(windowID) || null,
-        };
-
-        // Extract geometry
+        const windowData = this._createWindowData(windowID, window, i);
         await this._extractWindowGeometry(windowData);
-
-        // Calculate areas
         windowData.area = windowData.overallWidth * windowData.overallHeight;
         windowData.glazedArea = windowData.area * (1 - windowData.frameRatio);
 
         this.windows.push(windowData);
+      }
+
+      // Also check for ArchiCAD-style BuildingElementProxy windows
+      // ArchiCAD exports windows as IFCBUILDINGELEMENTPROXY with names like "WIND-001"
+      const proxyIDs = this.ifcAPI.GetLineIDsWithType(this.modelID, IFCBUILDINGELEMENTPROXY);
+
+      for (let i = 0; i < proxyIDs.size(); i++) {
+        const proxyID = proxyIDs.get(i);
+        const proxy = this.ifcAPI.GetLine(this.modelID, proxyID);
+        const name = proxy.Name?.value || '';
+
+        // Check if this proxy is a window (ArchiCAD naming convention)
+        if (name.toUpperCase().startsWith('WIND')) {
+          const windowData = this._createWindowData(proxyID, proxy, this.windows.length);
+          await this._extractWindowGeometry(windowData);
+          windowData.area = windowData.overallWidth * windowData.overallHeight;
+          windowData.glazedArea = windowData.area * (1 - windowData.frameRatio);
+
+          this.windows.push(windowData);
+        }
       }
     } catch (error) {
       console.warn('Error extracting windows:', error);
     }
 
     console.log(`Extracted ${this.windows.length} windows`);
+  }
+
+  /**
+   * Create window data object from IFC entity
+   * @param {number} id - Express ID
+   * @param {Object} element - IFC element
+   * @param {number} index - Window index
+   * @returns {Object} Window data object
+   * @private
+   */
+  _createWindowData(id, element, index) {
+    return {
+      expressID: id,
+      globalId: element.GlobalId?.value || '',
+      name: element.Name?.value || `Window ${index + 1}`,
+      overallWidth: element.OverallWidth?.value || 1.0,
+      overallHeight: element.OverallHeight?.value || 1.2,
+      area: 0,
+      glazedArea: 0,
+      centre: { x: 0, y: 0, z: 0 },
+      normal: { x: 0, y: 1, z: 0 },
+      vertices: [],
+      transmittance: 0.7,
+      frameRatio: 0.15,
+      orientation: 'N',
+      sillHeight: 0.9,
+      mesh: this.meshes.get(id) || null,
+    };
   }
 
   /**
