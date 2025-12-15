@@ -919,11 +919,18 @@ export class UI {
       return 'value-poor';
     };
 
+    const formatRoomName = (room) => {
+      if (room.longName) {
+        return `${room.name} - ${room.longName}`;
+      }
+      return room.name;
+    };
+
     const rows = results.map(r => {
       if (!r.success) {
         return `
           <tr>
-            <td>${r.room.name}</td>
+            <td>${formatRoomName(r.room)}</td>
             <td>${r.room.floorArea.toFixed(1)}</td>
             <td>${r.windows.length}</td>
             <td colspan="3">Analysis failed</td>
@@ -937,7 +944,7 @@ export class UI {
 
       return `
         <tr>
-          <td>${r.room.name}</td>
+          <td>${formatRoomName(r.room)}</td>
           <td>${r.room.floorArea.toFixed(1)}</td>
           <td>${r.windows.length}</td>
           <td class="${getValueClass(r.stats.average, 2, 5)}">${r.stats.average.toFixed(2)}%</td>
@@ -1018,13 +1025,20 @@ export class UI {
     `;
 
     // Build comparison table rows
+    const formatRoomName = (room) => {
+      if (room.longName) {
+        return `${room.name} - ${room.longName}`;
+      }
+      return room.name;
+    };
+
     const rows = baselineResults.map(baselineRoom => {
       const compRoom = comparisonResults.find(r => r.room.name === baselineRoom.room.name);
 
       if (!baselineRoom.success) {
         return `
           <tr>
-            <td>${baselineRoom.room.name}</td>
+            <td>${formatRoomName(baselineRoom.room)}</td>
             <td>Error</td>
             <td>${compRoom?.success ? compRoom.stats.average.toFixed(2) + '%' : 'Error'}</td>
             <td>-</td>
@@ -1048,7 +1062,7 @@ export class UI {
 
       return `
         <tr>
-          <td>${baselineRoom.room.name}</td>
+          <td>${formatRoomName(baselineRoom.room)}</td>
           <td>${baselineDF.toFixed(2)}%</td>
           <td>${compDF !== null ? compDF.toFixed(2) + '%' : 'N/A'}</td>
           <td class="${changeClass}">${changeText}</td>
