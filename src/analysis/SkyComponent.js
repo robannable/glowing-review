@@ -32,6 +32,17 @@ export function calculateSkyComponent(point, windows) {
 
     if (distance < 0.01) continue; // Point is at window
 
+    // Check if point is on the interior side of the window
+    // Window normal points OUTWARD from room, so:
+    // - Interior points: toWindow aligns with normal (positive dot) - point behind window looking out
+    // - Exterior points: toWindow opposes normal (negative dot) - point in front of window
+    const viewDir = normalise(toWindow);
+    const facingDot = dotProduct(viewDir, window.normal);
+
+    // Point must be on interior side (positive dot = behind window, looking through it)
+    // Negative dot means point is on exterior side, can't receive light through this window
+    if (facingDot < -0.1) continue; // Point is on exterior side, can't see through window
+
     // Calculate altitude angle to window centre
     const altitude = Math.asin(toWindow.y / distance);
 
@@ -48,9 +59,8 @@ export function calculateSkyComponent(point, windows) {
     const cieFactor = (1 + 2 * Math.sin(altitude)) / 3;
 
     // Cosine correction for window angle relative to view direction
-    // (how much of the window faces the point)
-    const viewDir = normalise(toWindow);
-    const cosineCorrection = Math.abs(dotProduct(viewDir, window.normal));
+    // Use absolute value since we've already verified correct side
+    const cosineCorrection = Math.abs(facingDot);
 
     // Sky Component contribution from this window
     // SC = (solid angle / hemisphere) × CIE factor × transmittance × maintenance
