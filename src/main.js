@@ -269,6 +269,19 @@ class DaylightLab {
       // Get settings
       const settings = this.ui.getSettings();
 
+      // Debug: Log room and window info for offset/rotated model diagnosis
+      console.log('=== Daylight Calculation Debug ===');
+      console.log('Room:', {
+        name: this.currentRoom.name,
+        boundingBox: this.currentRoom.boundingBox,
+        floorArea: this.currentRoom.floorArea,
+        floorPolygonVertices: this.currentRoom.floorPolygon?.length,
+      });
+      console.log('Windows found:', this.currentWindows.length);
+      this.currentWindows.forEach((w, i) => {
+        console.log(`  Window ${i + 1}: centre=(${w.centre.x.toFixed(1)}, ${w.centre.y.toFixed(1)}, ${w.centre.z.toFixed(1)}), area=${w.glazedArea.toFixed(2)}m², orientation=${w.orientation}`);
+      });
+
       // Create calculator
       this.calculator = new DaylightCalculator(
         this.currentRoom,
@@ -297,7 +310,20 @@ class DaylightLab {
         gridLength: results.grid?.length,
         statistics: results.statistics,
         mode: results.mode,
+        baseIRC: results.baseIRC,
       });
+
+      // Sample a few grid points to check SC vs IRC distribution
+      if (results.grid && results.grid.length > 0) {
+        const sampleIndices = [0, Math.floor(results.grid.length / 2), results.grid.length - 1];
+        console.log('Sample grid points (SC + IRC = DF):');
+        sampleIndices.forEach(i => {
+          const p = results.grid[i];
+          if (p) {
+            console.log(`  Point ${i}: pos=(${p.position.x.toFixed(1)}, ${p.position.z.toFixed(1)}), SC=${p.skyComponent?.toFixed(2)}%, IRC=${p.irc?.toFixed(2)}%, DF=${p.daylightFactor?.toFixed(2)}%`);
+          }
+        });
+      }
 
       this.calculationResults = results;
 
