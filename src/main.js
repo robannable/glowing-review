@@ -10,7 +10,8 @@ import { RoomSelector } from './components/RoomSelector.js';
 import { WindowDetector } from './components/WindowDetector.js';
 import { DaylightCalculator } from './analysis/DaylightCalculator.js';
 import { createHeatmapMesh, createRoomOutline, createWindowIndicators } from './visualisation/Heatmap.js';
-import { DEFAULT_WORK_PLANE_HEIGHT } from './utils/constants.js';
+import { DEFAULT_WORK_PLANE_HEIGHT, DEFAULT_WALL_OFFSET } from './utils/constants.js';
+import { offsetPolygon } from './utils/geometry.js';
 import {
   runBatchAnalysis,
   generateBatchSummary,
@@ -327,7 +328,12 @@ class DaylightLab {
       const outlineHeight = floorLevel + DEFAULT_WORK_PLANE_HEIGHT;
 
       if (this.currentRoom.floorPolygon) {
-        const outline = createRoomOutline(this.currentRoom.floorPolygon, outlineHeight);
+        // Use inset polygon to match where grid points are generated
+        const insetPolygon = offsetPolygon(this.currentRoom.floorPolygon, -DEFAULT_WALL_OFFSET);
+        const outlinePolygon = (insetPolygon && insetPolygon.length >= 3)
+          ? insetPolygon
+          : this.currentRoom.floorPolygon;
+        const outline = createRoomOutline(outlinePolygon, outlineHeight);
         if (outline) {
           this.viewer.addHeatmap(outline);
         }
