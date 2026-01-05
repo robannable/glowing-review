@@ -15,6 +15,7 @@ import {
   IFCBUILDINGELEMENTPROXY,
 } from '../utils/constants.js';
 import { createDefaultMaterials } from '../utils/materials.js';
+import { extractFloorPolygonFromGeometry, calculatePolygonArea, calculatePolygonPerimeter } from '../utils/geometry.js';
 
 export class IFCLoader {
   constructor() {
@@ -418,23 +419,34 @@ export class IFCLoader {
             maxZ: bbox.max.z,
           };
 
-          const width = bbox.max.x - bbox.min.x;
-          const depth = bbox.max.z - bbox.min.z;
           const height = bbox.max.y - bbox.min.y;
-
           spaceData.height = height > 0 ? height : 2.7;
-          spaceData.floorArea = width * depth;
-          spaceData.perimeter = 2 * (width + depth);
+
+          // Extract actual floor polygon from mesh vertices near floor level
+          const floorPolygon = extractFloorPolygonFromGeometry(finalGeometry, bbox.min.y, 0.3);
+
+          if (floorPolygon && floorPolygon.length >= 3) {
+            spaceData.floorPolygon = floorPolygon;
+            // Calculate accurate area and perimeter from actual polygon
+            spaceData.floorArea = calculatePolygonArea(floorPolygon);
+            spaceData.perimeter = calculatePolygonPerimeter(floorPolygon);
+          } else {
+            // Fallback to bounding box rectangle if extraction fails
+            const width = bbox.max.x - bbox.min.x;
+            const depth = bbox.max.z - bbox.min.z;
+            spaceData.floorArea = width * depth;
+            spaceData.perimeter = 2 * (width + depth);
+            spaceData.floorPolygon = [
+              { x: bbox.min.x, y: bbox.min.z },
+              { x: bbox.max.x, y: bbox.min.z },
+              { x: bbox.max.x, y: bbox.max.z },
+              { x: bbox.min.x, y: bbox.max.z },
+            ];
+          }
+
           spaceData.volume = spaceData.floorArea * spaceData.height;
 
-          spaceData.floorPolygon = [
-            { x: bbox.min.x, y: bbox.min.z },
-            { x: bbox.max.x, y: bbox.min.z },
-            { x: bbox.max.x, y: bbox.max.z },
-            { x: bbox.min.x, y: bbox.max.z },
-          ];
-
-          console.log(`Space "${spaceData.name}": ${spaceData.floorArea.toFixed(2)} m² (${width.toFixed(2)} x ${depth.toFixed(2)} m)`);
+          console.log(`Space "${spaceData.name}": ${spaceData.floorArea.toFixed(2)} m² (${spaceData.floorPolygon.length} vertices)`);
         }
       }
     } catch (error) {
@@ -462,25 +474,34 @@ export class IFCLoader {
       maxZ: bbox.max.z,
     };
 
-    // Estimate dimensions
-    const width = bbox.max.x - bbox.min.x;
-    const depth = bbox.max.z - bbox.min.z;
     const height = bbox.max.y - bbox.min.y;
-
     spaceData.height = height > 0 ? height : 2.7;
-    spaceData.floorArea = width * depth;
-    spaceData.perimeter = 2 * (width + depth);
+
+    // Extract actual floor polygon from mesh vertices near floor level
+    const floorPolygon = extractFloorPolygonFromGeometry(geometry, bbox.min.y, 0.3);
+
+    if (floorPolygon && floorPolygon.length >= 3) {
+      spaceData.floorPolygon = floorPolygon;
+      // Calculate accurate area and perimeter from actual polygon
+      spaceData.floorArea = calculatePolygonArea(floorPolygon);
+      spaceData.perimeter = calculatePolygonPerimeter(floorPolygon);
+    } else {
+      // Fallback to bounding box rectangle if extraction fails
+      const width = bbox.max.x - bbox.min.x;
+      const depth = bbox.max.z - bbox.min.z;
+      spaceData.floorArea = width * depth;
+      spaceData.perimeter = 2 * (width + depth);
+      spaceData.floorPolygon = [
+        { x: bbox.min.x, y: bbox.min.z },
+        { x: bbox.max.x, y: bbox.min.z },
+        { x: bbox.max.x, y: bbox.max.z },
+        { x: bbox.min.x, y: bbox.max.z },
+      ];
+    }
+
     spaceData.volume = spaceData.floorArea * spaceData.height;
 
-    // Create simplified floor polygon (rectangular approximation)
-    spaceData.floorPolygon = [
-      { x: bbox.min.x, y: bbox.min.z },
-      { x: bbox.max.x, y: bbox.min.z },
-      { x: bbox.max.x, y: bbox.max.z },
-      { x: bbox.min.x, y: bbox.max.z },
-    ];
-
-    console.log(`Space "${spaceData.name}" (from mesh): ${spaceData.floorArea.toFixed(2)} m²`);
+    console.log(`Space "${spaceData.name}" (from mesh): ${spaceData.floorArea.toFixed(2)} m² (${spaceData.floorPolygon.length} vertices)`);
   }
 
   /**

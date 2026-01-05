@@ -322,3 +322,100 @@ export function distance2D(a, b) {
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
+
+/**
+ * Calculate cross product for 2D vectors (returns scalar z-component)
+ * Used to determine turn direction in convex hull
+ * @param {Object} o - Origin point {x, y}
+ * @param {Object} a - First point {x, y}
+ * @param {Object} b - Second point {x, y}
+ * @returns {number} Cross product z-component (positive = left turn, negative = right turn)
+ */
+function cross2D(o, a, b) {
+  return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+/**
+ * Compute convex hull of 2D points using Andrew's monotone chain algorithm
+ * @param {Array} points - Array of points {x, y}
+ * @returns {Array} Convex hull vertices in counter-clockwise order
+ */
+export function convexHull2D(points) {
+  if (!points || points.length < 3) return points ? [...points] : [];
+
+  // Remove duplicate points and sort
+  const uniquePoints = [];
+  const seen = new Set();
+  for (const p of points) {
+    const key = `${p.x.toFixed(6)},${p.y.toFixed(6)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniquePoints.push({ x: p.x, y: p.y });
+    }
+  }
+
+  if (uniquePoints.length < 3) return uniquePoints;
+
+  // Sort points by x, then by y
+  uniquePoints.sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+
+  // Build lower hull
+  const lower = [];
+  for (const p of uniquePoints) {
+    while (lower.length >= 2 && cross2D(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+
+  // Build upper hull
+  const upper = [];
+  for (let i = uniquePoints.length - 1; i >= 0; i--) {
+    const p = uniquePoints[i];
+    while (upper.length >= 2 && cross2D(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+
+  // Remove last point of each half (it's repeated)
+  lower.pop();
+  upper.pop();
+
+  return lower.concat(upper);
+}
+
+/**
+ * Extract floor polygon from mesh geometry by finding vertices near floor level
+ * @param {THREE.BufferGeometry} geometry - Mesh geometry
+ * @param {number} floorY - Floor Y level
+ * @param {number} tolerance - Vertical tolerance for floor detection (default 0.3m)
+ * @returns {Array} Floor polygon vertices {x, y} where y is the Z coordinate
+ */
+export function extractFloorPolygonFromGeometry(geometry, floorY, tolerance = 0.3) {
+  if (!geometry || !geometry.attributes || !geometry.attributes.position) {
+    return null;
+  }
+
+  const positions = geometry.attributes.position.array;
+  const floorPoints = [];
+
+  // Collect all vertices near floor level
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1]; // Y is up in Three.js
+    const z = positions[i + 2];
+
+    // Check if vertex is near floor level
+    if (Math.abs(y - floorY) <= tolerance) {
+      floorPoints.push({ x, y: z }); // Convert 3D (x, y, z) to 2D (x, z)
+    }
+  }
+
+  if (floorPoints.length < 3) {
+    return null;
+  }
+
+  // Compute convex hull to get floor boundary
+  return convexHull2D(floorPoints);
+}
