@@ -10,6 +10,7 @@ import { RoomSelector } from './components/RoomSelector.js';
 import { WindowDetector } from './components/WindowDetector.js';
 import { DaylightCalculator } from './analysis/DaylightCalculator.js';
 import { createHeatmapMesh, createRoomOutline, createWindowIndicators } from './visualisation/Heatmap.js';
+import { DEFAULT_WORK_PLANE_HEIGHT } from './utils/constants.js';
 import {
   runBatchAnalysis,
   generateBatchSummary,
@@ -321,15 +322,19 @@ class DaylightLab {
       }
 
       // Add room outline for context
+      // Use actual floor level from room bounding box to handle offset models
+      const floorLevel = this.currentRoom.boundingBox?.minY || 0;
+      const outlineHeight = floorLevel + DEFAULT_WORK_PLANE_HEIGHT;
+
       if (this.currentRoom.floorPolygon) {
-        const outline = createRoomOutline(this.currentRoom.floorPolygon);
+        const outline = createRoomOutline(this.currentRoom.floorPolygon, outlineHeight);
         if (outline) {
           this.viewer.addHeatmap(outline);
         }
       }
 
-      // Add window indicators
-      const windowIndicators = createWindowIndicators(this.currentWindows);
+      // Add window indicators at work plane height
+      const windowIndicators = createWindowIndicators(this.currentWindows, outlineHeight);
       if (windowIndicators) {
         this.viewer.addHeatmap(windowIndicators);
       }
