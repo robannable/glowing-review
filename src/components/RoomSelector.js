@@ -32,6 +32,7 @@ export class RoomSelector {
 
   /**
    * Create highlight meshes for each room
+   * Uses actual IFC space geometry when available to preserve pitched roofs and complex shapes
    * @private
    */
   _createRoomMeshes() {
@@ -42,28 +43,47 @@ export class RoomSelector {
     this.roomMeshes.clear();
 
     for (const room of this.rooms) {
-      if (!room.boundingBox) continue;
+      let mesh;
 
-      // Create a box mesh to represent the room volume for selection
-      const bbox = room.boundingBox;
-      const width = bbox.maxX - bbox.minX;
-      const height = bbox.maxY - bbox.minY;
-      const depth = bbox.maxZ - bbox.minZ;
+      // Prefer using actual IFC space mesh geometry for accurate representation
+      // This preserves pitched roofs and complex room shapes
+      if (room.mesh && room.mesh.geometry) {
+        // Clone the actual space geometry from IFC
+        const geometry = room.mesh.geometry.clone();
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x4a90d9,
+          transparent: true,
+          opacity: 0.0, // Invisible by default
+          side: THREE.DoubleSide,
+        });
 
-      const geometry = new THREE.BoxGeometry(width, height, depth);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x4a90d9,
-        transparent: true,
-        opacity: 0.0, // Invisible by default
-        side: THREE.DoubleSide,
-      });
+        mesh = new THREE.Mesh(geometry, material);
+        // Position is already baked into the geometry, no need to transform
+      } else if (room.boundingBox) {
+        // Fallback to bounding box if no mesh available
+        const bbox = room.boundingBox;
+        const width = bbox.maxX - bbox.minX;
+        const height = bbox.maxY - bbox.minY;
+        const depth = bbox.maxZ - bbox.minZ;
 
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        (bbox.minX + bbox.maxX) / 2,
-        (bbox.minY + bbox.maxY) / 2,
-        (bbox.minZ + bbox.maxZ) / 2
-      );
+        const geometry = new THREE.BoxGeometry(width, height, depth);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x4a90d9,
+          transparent: true,
+          opacity: 0.0, // Invisible by default
+          side: THREE.DoubleSide,
+        });
+
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(
+          (bbox.minX + bbox.maxX) / 2,
+          (bbox.minY + bbox.maxY) / 2,
+          (bbox.minZ + bbox.maxZ) / 2
+        );
+      } else {
+        // No geometry available, skip this room
+        continue;
+      }
 
       mesh.userData.roomId = room.expressID;
       mesh.userData.room = room;

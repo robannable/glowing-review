@@ -350,55 +350,91 @@ export class IFCLoader {
       const flatMesh = this.ifcAPI.GetFlatMesh(this.modelID, spaceData.expressID);
 
       if (flatMesh.geometries.size() > 0) {
-        // Get the first geometry
-        const placedGeom = flatMesh.geometries.get(0);
-        const geom = this.ifcAPI.GetGeometry(this.modelID, placedGeom.geometryExpressID);
+        // Collect all geometries for this space (may have multiple parts)
+        const geometries = [];
 
-        const vertices = this.ifcAPI.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
+        for (let g = 0; g < flatMesh.geometries.size(); g++) {
+          const placedGeom = flatMesh.geometries.get(g);
+          const geom = this.ifcAPI.GetGeometry(this.modelID, placedGeom.geometryExpressID);
 
-        if (vertices.length > 0) {
-          // Get transformation matrix
-          const matrix = new THREE.Matrix4();
-          matrix.fromArray(placedGeom.flatTransformation);
+          const vertices = this.ifcAPI.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
+          const indices = this.ifcAPI.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
 
-          // Find bounding box from vertices (position is every 6 floats: x,y,z,nx,ny,nz)
-          let minX = Infinity, minY = Infinity, minZ = Infinity;
-          let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          if (vertices.length > 0 && indices.length > 0) {
+            // Get transformation matrix
+            const matrix = new THREE.Matrix4();
+            matrix.fromArray(placedGeom.flatTransformation);
 
-          for (let i = 0; i < vertices.length; i += 6) {
-            // Apply transformation to vertex
-            const v = new THREE.Vector3(vertices[i], vertices[i + 1], vertices[i + 2]);
-            v.applyMatrix4(matrix);
+            // Create buffer geometry for this part
+            const bufferGeometry = new THREE.BufferGeometry();
+            const positionArray = new Float32Array(vertices.length / 2);
+            const normalArray = new Float32Array(vertices.length / 2);
 
-            minX = Math.min(minX, v.x);
-            minY = Math.min(minY, v.y);
-            minZ = Math.min(minZ, v.z);
-            maxX = Math.max(maxX, v.x);
-            maxY = Math.max(maxY, v.y);
-            maxZ = Math.max(maxZ, v.z);
+            for (let i = 0; i < vertices.length; i += 6) {
+              const idx = i / 2;
+              positionArray[idx] = vertices[i];
+              positionArray[idx + 1] = vertices[i + 1];
+              positionArray[idx + 2] = vertices[i + 2];
+              normalArray[idx] = vertices[i + 3];
+              normalArray[idx + 1] = vertices[i + 4];
+              normalArray[idx + 2] = vertices[i + 5];
+            }
+
+            bufferGeometry.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
+            bufferGeometry.setAttribute('normal', new THREE.BufferAttribute(normalArray, 3));
+            bufferGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            bufferGeometry.applyMatrix4(matrix);
+
+            geometries.push(bufferGeometry);
+          }
+        }
+
+        if (geometries.length > 0) {
+          // Merge geometries if multiple parts
+          let finalGeometry;
+          if (geometries.length === 1) {
+            finalGeometry = geometries[0];
+          } else {
+            finalGeometry = this._mergeBufferGeometries(geometries);
           }
 
-          if (minX !== Infinity) {
-            spaceData.boundingBox = { minX, minY, minZ, maxX, maxY, maxZ };
+          // Create mesh for the space
+          const material = this._getMaterialForType('space');
+          const spaceMesh = new THREE.Mesh(finalGeometry, material);
+          spaceMesh.userData.expressID = spaceData.expressID;
+          spaceMesh.userData.elementType = 'space';
+          spaceData.mesh = spaceMesh;
 
-            const width = maxX - minX;
-            const depth = maxZ - minZ;
-            const height = maxY - minY;
+          // Calculate bounding box from geometry
+          finalGeometry.computeBoundingBox();
+          const bbox = finalGeometry.boundingBox;
 
-            spaceData.height = height > 0 ? height : 2.7;
-            spaceData.floorArea = width * depth;
-            spaceData.perimeter = 2 * (width + depth);
-            spaceData.volume = spaceData.floorArea * spaceData.height;
+          spaceData.boundingBox = {
+            minX: bbox.min.x,
+            minY: bbox.min.y,
+            minZ: bbox.min.z,
+            maxX: bbox.max.x,
+            maxY: bbox.max.y,
+            maxZ: bbox.max.z,
+          };
 
-            spaceData.floorPolygon = [
-              { x: minX, y: minZ },
-              { x: maxX, y: minZ },
-              { x: maxX, y: maxZ },
-              { x: minX, y: maxZ },
-            ];
+          const width = bbox.max.x - bbox.min.x;
+          const depth = bbox.max.z - bbox.min.z;
+          const height = bbox.max.y - bbox.min.y;
 
-            console.log(`Space "${spaceData.name}": ${spaceData.floorArea.toFixed(2)} m² (${width.toFixed(2)} x ${depth.toFixed(2)} m)`);
-          }
+          spaceData.height = height > 0 ? height : 2.7;
+          spaceData.floorArea = width * depth;
+          spaceData.perimeter = 2 * (width + depth);
+          spaceData.volume = spaceData.floorArea * spaceData.height;
+
+          spaceData.floorPolygon = [
+            { x: bbox.min.x, y: bbox.min.z },
+            { x: bbox.max.x, y: bbox.min.z },
+            { x: bbox.max.x, y: bbox.max.z },
+            { x: bbox.min.x, y: bbox.max.z },
+          ];
+
+          console.log(`Space "${spaceData.name}": ${spaceData.floorArea.toFixed(2)} m² (${width.toFixed(2)} x ${depth.toFixed(2)} m)`);
         }
       }
     } catch (error) {
