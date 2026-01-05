@@ -26,7 +26,7 @@ export function createHeatmapMesh(grid, spacing = 0.5) {
   const vertices = [];
   const colors = [];
 
-  const halfSize = spacing * 0.45; // Slight gap between cells
+  const halfSize = spacing * 0.4; // Gap between cells to prevent boundary overflow
 
   for (const point of validPoints) {
     const x = point.position.x;

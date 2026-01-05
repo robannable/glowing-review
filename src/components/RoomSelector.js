@@ -175,8 +175,8 @@ export class RoomSelector {
       this.selectedRoom = room;
       this.selectedMesh = mesh;
 
-      // Show selection box
-      mesh.material.opacity = 0.3;
+      // Show selection as subtle outline - reduced opacity to not obscure heatmap
+      mesh.material.opacity = 0.08;
       mesh.material.color.set(0xe94560);
 
       // Highlight the IFC mesh
