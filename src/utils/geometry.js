@@ -419,3 +419,159 @@ export function extractFloorPolygonFromGeometry(geometry, floorY, tolerance = 0.
   // Compute convex hull to get floor boundary
   return convexHull2D(floorPoints);
 }
+
+/**
+ * Calculate area of a 3D polygon using cross product sum method
+ * Works for arbitrary 3D polygons (not just planar in XY)
+ * @param {Array} vertices - Array of 3D points {x, y, z}
+ * @returns {number} Area in square meters
+ */
+export function calculateFaceArea(vertices) {
+  if (!vertices || vertices.length < 3) return 0;
+
+  // Use cross product sum method for 3D polygon area
+  const n = vertices.length;
+  let totalX = 0, totalY = 0, totalZ = 0;
+
+  for (let i = 0; i < n; i++) {
+    const current = vertices[i];
+    const next = vertices[(i + 1) % n];
+
+    // Cross product: current × next
+    totalX += current.y * next.z - current.z * next.y;
+    totalY += current.z * next.x - current.x * next.z;
+    totalZ += current.x * next.y - current.y * next.x;
+  }
+
+  // Area is half the magnitude of the total cross product
+  return Math.sqrt(totalX * totalX + totalY * totalY + totalZ * totalZ) / 2;
+}
+
+/**
+ * Calculate face normal from vertices using Newell's method
+ * Works for non-planar polygons by averaging
+ * @param {Array} vertices - Array of 3D points {x, y, z}
+ * @returns {Object} Unit normal vector {x, y, z}
+ */
+export function calculateFaceNormal(vertices) {
+  if (!vertices || vertices.length < 3) {
+    return { x: 0, y: 1, z: 0 }; // Default up
+  }
+
+  const n = vertices.length;
+  let nx = 0, ny = 0, nz = 0;
+
+  // Newell's method for polygon normal
+  for (let i = 0; i < n; i++) {
+    const current = vertices[i];
+    const next = vertices[(i + 1) % n];
+
+    nx += (current.y - next.y) * (current.z + next.z);
+    ny += (current.z - next.z) * (current.x + next.x);
+    nz += (current.x - next.x) * (current.y + next.y);
+  }
+
+  // Normalize
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (len === 0) {
+    return { x: 0, y: 1, z: 0 };
+  }
+
+  return { x: nx / len, y: ny / len, z: nz / len };
+}
+
+/**
+ * Classify a surface by its normal direction
+ * @param {Object} normal - Unit normal vector {x, y, z}
+ * @returns {string} Surface type: 'floor', 'ceiling', or 'wall'
+ */
+export function classifySurfaceByNormal(normal) {
+  if (!normal) return 'wall';
+
+  // Normalize if not already (safety check)
+  const len = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+  const ny = len > 0 ? normal.y / len : 0;
+
+  // In Three.js, Y is up
+  // Normal pointing down (negative Y) = floor (we're looking at it from above)
+  // Normal pointing up (positive Y) = ceiling (we're looking at it from below)
+  if (ny < -0.7) {
+    return 'floor';
+  } else if (ny > 0.7) {
+    return 'ceiling';
+  } else {
+    return 'wall';
+  }
+}
+
+/**
+ * Transform a 3D point by a 4x4 transformation matrix
+ * @param {Object} point - Point {x, y, z}
+ * @param {Array} matrix - 4x4 matrix in column-major order (16 elements)
+ * @returns {Object} Transformed point {x, y, z}
+ */
+export function transformPoint(point, matrix) {
+  if (!matrix || matrix.length !== 16) {
+    return point;
+  }
+
+  // Column-major order (same as OpenGL/Three.js)
+  const x = point.x * matrix[0] + point.y * matrix[4] + point.z * matrix[8] + matrix[12];
+  const y = point.x * matrix[1] + point.y * matrix[5] + point.z * matrix[9] + matrix[13];
+  const z = point.x * matrix[2] + point.y * matrix[6] + point.z * matrix[10] + matrix[14];
+
+  return { x, y, z };
+}
+
+/**
+ * Multiply two 4x4 matrices in column-major order
+ * @param {Array} a - First 4x4 matrix
+ * @param {Array} b - Second 4x4 matrix
+ * @returns {Array} Result matrix (a × b)
+ */
+export function multiplyMatrices(a, b) {
+  const result = new Array(16).fill(0);
+
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        sum += a[row + k * 4] * b[k + col * 4];
+      }
+      result[row + col * 4] = sum;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Create identity 4x4 matrix
+ * @returns {Array} Identity matrix
+ */
+export function identityMatrix() {
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ];
+}
+
+/**
+ * Triangulate a polygon using fan triangulation (works for convex polygons)
+ * @param {Array} vertices - Array of vertex indices
+ * @returns {Array} Array of triangle index triplets
+ */
+export function fanTriangulate(vertices) {
+  if (!vertices || vertices.length < 3) return [];
+
+  const triangles = [];
+  const first = vertices[0];
+
+  for (let i = 1; i < vertices.length - 1; i++) {
+    triangles.push([first, vertices[i], vertices[i + 1]]);
+  }
+
+  return triangles;
+}

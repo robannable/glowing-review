@@ -15,7 +15,19 @@ import {
   IFCBUILDINGELEMENTPROXY,
 } from '../utils/constants.js';
 import { createDefaultMaterials } from '../utils/materials.js';
-import { extractFloorPolygonFromGeometry, calculatePolygonArea, calculatePolygonPerimeter } from '../utils/geometry.js';
+import {
+  extractFloorPolygonFromGeometry,
+  calculatePolygonArea,
+  calculatePolygonPerimeter,
+  calculateFaceArea,
+  calculateFaceNormal,
+  classifySurfaceByNormal,
+  transformPoint,
+  multiplyMatrices,
+  identityMatrix,
+  fanTriangulate,
+  convexHull2D,
+} from '../utils/geometry.js';
 
 export class IFCLoader {
   constructor() {
@@ -318,6 +330,14 @@ export class IFCLoader {
           perimeter: 0,
           volume: 0,
           mesh: this.meshes.get(spaceID) || null,
+          // 3D body geometry
+          bodyFaces: [],     // Full 3D face data from Body representation
+          floorFaces: [],    // Faces classified as floor
+          ceilingFaces: [],  // Faces classified as ceiling
+          wallFaces: [],     // Faces classified as wall
+          totalCeilingArea: 0,
+          totalWallArea: 0,
+          hasBodyGeometry: false,
         };
 
         // Try to extract floor polygon from geometry
@@ -343,8 +363,96 @@ export class IFCLoader {
 
     if (mesh && mesh.geometry) {
       this._extractGeometryFromMesh(spaceData, mesh);
-      return;
     }
+
+    // Try to extract full 3D body faces (for pitched ceilings, etc.)
+    try {
+      const bodyFaces = this._extractBodyFaces(
+        spaceData.expressID,
+        identityMatrix(),
+        spaceData.name
+      );
+
+      if (bodyFaces.length > 0) {
+        spaceData.bodyFaces = bodyFaces;
+        spaceData.hasBodyGeometry = true;
+
+        // Classify faces by surface type
+        for (const face of bodyFaces) {
+          switch (face.surfaceType) {
+            case 'floor':
+              spaceData.floorFaces.push(face);
+              break;
+            case 'ceiling':
+              spaceData.ceilingFaces.push(face);
+              spaceData.totalCeilingArea += face.area;
+              break;
+            case 'wall':
+              spaceData.wallFaces.push(face);
+              spaceData.totalWallArea += face.area;
+              break;
+          }
+        }
+
+        console.log(`Space "${spaceData.name}" body geometry: ${bodyFaces.length} faces (${spaceData.floorFaces.length} floor, ${spaceData.ceilingFaces.length} ceiling, ${spaceData.wallFaces.length} wall)`);
+
+        // If we got floor faces but didn't have a floor polygon, compute one from floor faces
+        if (spaceData.floorFaces.length > 0 && !spaceData.floorPolygon) {
+          this._computeFloorPolygonFromFaces(spaceData);
+        }
+
+        // Create mesh from extracted faces if we don't have one
+        if (!spaceData.mesh && bodyFaces.length > 0) {
+          const faceGeometry = this._createGeometryFromFaces(bodyFaces);
+          if (faceGeometry) {
+            const material = this._getMaterialForType('space');
+            spaceData.mesh = new THREE.Mesh(faceGeometry, material);
+            spaceData.mesh.userData.expressID = spaceData.expressID;
+            spaceData.mesh.userData.elementType = 'space';
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Could not extract body faces for ${spaceData.name}:`, error);
+    }
+
+    // If we still don't have geometry, fall back to web-ifc extraction
+    if (!spaceData.mesh) {
+      await this._extractSpaceGeometryFallback(spaceData);
+    }
+  }
+
+  /**
+   * Compute floor polygon from extracted floor faces
+   * @param {Object} spaceData - Space data object
+   * @private
+   */
+  _computeFloorPolygonFromFaces(spaceData) {
+    // Collect all floor face vertices projected to 2D (x, z)
+    const floorPoints = [];
+    for (const face of spaceData.floorFaces) {
+      for (const v of face.vertices) {
+        floorPoints.push({ x: v.x, y: v.z }); // Project to XZ plane
+      }
+    }
+
+    if (floorPoints.length < 3) return;
+
+    // Compute convex hull for floor boundary
+    spaceData.floorPolygon = convexHull2D(floorPoints);
+
+    if (spaceData.floorPolygon && spaceData.floorPolygon.length >= 3) {
+      spaceData.floorArea = calculatePolygonArea(spaceData.floorPolygon);
+      spaceData.perimeter = calculatePolygonPerimeter(spaceData.floorPolygon);
+    }
+  }
+
+  /**
+   * Fallback geometry extraction using web-ifc flat mesh
+   * @param {Object} spaceData - Space data object
+   * @private
+   */
+  async _extractSpaceGeometryFallback(spaceData) {
 
     // Fallback: Extract geometry directly from web-ifc
     try {
@@ -502,6 +610,793 @@ export class IFCLoader {
     spaceData.volume = spaceData.floorArea * spaceData.height;
 
     console.log(`Space "${spaceData.name}" (from mesh): ${spaceData.floorArea.toFixed(2)} m² (${spaceData.floorPolygon.length} vertices)`);
+  }
+
+  /**
+   * Extract body representation faces from an IfcSpace
+   * Returns detailed 3D face information including pitched ceilings, sloped surfaces, etc.
+   * @param {number} spaceID - Express ID of the IfcSpace
+   * @param {Array} placementMatrix - 4x4 transformation matrix (column-major)
+   * @param {string} spaceName - Name for logging/identification
+   * @returns {Array} Array of face objects with vertices, normal, area, surfaceType
+   * @private
+   */
+  _extractBodyFaces(spaceID, placementMatrix, spaceName) {
+    const faces = [];
+
+    try {
+      const space = this.ifcAPI.GetLine(this.modelID, spaceID);
+      if (!space || !space.Representation) {
+        return faces;
+      }
+
+      // Get the product definition shape
+      const representation = this.ifcAPI.GetLine(this.modelID, space.Representation.value);
+      if (!representation || !representation.Representations) {
+        return faces;
+      }
+
+      // Find the Body representation
+      for (const repRef of representation.Representations) {
+        const shapeRep = this.ifcAPI.GetLine(this.modelID, repRef.value);
+        if (!shapeRep) continue;
+
+        // Check for Body representation (case-insensitive)
+        const identifier = shapeRep.RepresentationIdentifier?.value || '';
+        if (identifier.toLowerCase() !== 'body' && identifier !== '') {
+          continue;
+        }
+
+        // Process representation items
+        if (shapeRep.Items) {
+          for (const itemRef of shapeRep.Items) {
+            const item = this.ifcAPI.GetLine(this.modelID, itemRef.value);
+            if (item) {
+              const extractedFaces = this._extractFacesFromItem(
+                item,
+                placementMatrix,
+                `${spaceName}_face`
+              );
+              faces.push(...extractedFaces);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Error extracting body faces for ${spaceName}:`, error);
+    }
+
+    return faces;
+  }
+
+  /**
+   * Dispatch to appropriate face extractor based on geometry type
+   * @param {Object} item - IFC representation item
+   * @param {Array} placementMatrix - 4x4 transformation matrix
+   * @param {string} namePrefix - Name prefix for faces
+   * @returns {Array} Array of face objects
+   * @private
+   */
+  _extractFacesFromItem(item, placementMatrix, namePrefix) {
+    if (!item || !item.type) {
+      return [];
+    }
+
+    const typeName = this._getTypeName(item.type);
+
+    switch (typeName) {
+      case 'IfcPolygonalFaceSet':
+        return this._extractFacesFromPolygonalFaceSet(item, placementMatrix, namePrefix);
+
+      case 'IfcFacetedBrep':
+        return this._extractFacesFromFacetedBrep(item, placementMatrix, namePrefix);
+
+      case 'IfcExtrudedAreaSolid':
+        return this._extractFacesFromExtrudedAreaSolid(item, placementMatrix, namePrefix);
+
+      case 'IfcMappedItem':
+        return this._extractFacesFromMappedItem(item, placementMatrix, namePrefix);
+
+      default:
+        // Try to handle other solid types that might contain faces
+        if (typeName.includes('Brep') || typeName.includes('FaceSet')) {
+          console.log(`Unhandled solid type: ${typeName}`);
+        }
+        return [];
+    }
+  }
+
+  /**
+   * Get IFC type name from type ID
+   * @param {number} typeID - IFC type identifier
+   * @returns {string} Type name
+   * @private
+   */
+  _getTypeName(typeID) {
+    // Common IFC geometry types
+    const typeNames = {
+      2839578677: 'IfcPolygonalFaceSet',
+      807026263: 'IfcFacetedBrep',
+      2937912522: 'IfcExtrudedAreaSolid',
+      2830218821: 'IfcMappedItem',
+      1484403080: 'IfcShapeRepresentation',
+      3905492369: 'IfcCartesianPointList3D',
+      3939117080: 'IfcPolygonalBoundedHalfSpace',
+      1033248425: 'IfcIndexedPolyCurve',
+      2556980723: 'IfcFace',
+      3698973494: 'IfcClosedShell',
+      2529465313: 'IfcAdvancedBrep',
+      1950629157: 'IfcTriangulatedFaceSet',
+    };
+    return typeNames[typeID] || `Unknown(${typeID})`;
+  }
+
+  /**
+   * Extract faces from IfcPolygonalFaceSet (common in ArchiCAD exports)
+   * @param {Object} faceSet - IfcPolygonalFaceSet entity
+   * @param {Array} placementMatrix - 4x4 transformation matrix
+   * @param {string} namePrefix - Name prefix for faces
+   * @returns {Array} Array of face objects
+   * @private
+   */
+  _extractFacesFromPolygonalFaceSet(faceSet, placementMatrix, namePrefix) {
+    const faces = [];
+
+    try {
+      // Get coordinates from IfcCartesianPointList3D
+      if (!faceSet.Coordinates) {
+        return faces;
+      }
+
+      const coordList = this.ifcAPI.GetLine(this.modelID, faceSet.Coordinates.value);
+      if (!coordList || !coordList.CoordList) {
+        return faces;
+      }
+
+      // Extract all coordinate points
+      const points = [];
+      for (const coord of coordList.CoordList) {
+        const x = coord[0]?.value ?? coord[0] ?? 0;
+        const y = coord[1]?.value ?? coord[1] ?? 0;
+        const z = coord[2]?.value ?? coord[2] ?? 0;
+
+        // Transform point using placement matrix
+        const transformedPoint = transformPoint({ x, y, z }, placementMatrix);
+        points.push(transformedPoint);
+      }
+
+      // Process faces
+      if (!faceSet.Faces) {
+        return faces;
+      }
+
+      let faceIndex = 0;
+      for (const faceRef of faceSet.Faces) {
+        const face = this.ifcAPI.GetLine(this.modelID, faceRef.value);
+        if (!face || !face.CoordIndex) {
+          continue;
+        }
+
+        // Get vertex indices (IFC uses 1-based indexing!)
+        const vertices = [];
+        for (const idx of face.CoordIndex) {
+          const pointIndex = (idx.value ?? idx) - 1; // Convert to 0-based
+          if (pointIndex >= 0 && pointIndex < points.length) {
+            vertices.push(points[pointIndex]);
+          }
+        }
+
+        if (vertices.length >= 3) {
+          const normal = calculateFaceNormal(vertices);
+          const area = calculateFaceArea(vertices);
+          const surfaceType = classifySurfaceByNormal(normal);
+
+          faces.push({
+            name: `${namePrefix}_${faceIndex}`,
+            vertices,
+            normal,
+            area,
+            surfaceType,
+            vertexCount: vertices.length,
+          });
+        }
+
+        faceIndex++;
+      }
+    } catch (error) {
+      console.warn(`Error extracting PolygonalFaceSet faces:`, error);
+    }
+
+    return faces;
+  }
+
+  /**
+   * Extract faces from IfcFacetedBrep (boundary representation)
+   * @param {Object} brep - IfcFacetedBrep entity
+   * @param {Array} placementMatrix - 4x4 transformation matrix
+   * @param {string} namePrefix - Name prefix for faces
+   * @returns {Array} Array of face objects
+   * @private
+   */
+  _extractFacesFromFacetedBrep(brep, placementMatrix, namePrefix) {
+    const faces = [];
+
+    try {
+      if (!brep.Outer) {
+        return faces;
+      }
+
+      // Get the closed shell
+      const shell = this.ifcAPI.GetLine(this.modelID, brep.Outer.value);
+      if (!shell || !shell.CfsFaces) {
+        return faces;
+      }
+
+      let faceIndex = 0;
+      for (const faceRef of shell.CfsFaces) {
+        const face = this.ifcAPI.GetLine(this.modelID, faceRef.value);
+        if (!face || !face.Bounds) {
+          continue;
+        }
+
+        // Get face bounds (outer and inner loops)
+        for (const boundRef of face.Bounds) {
+          const bound = this.ifcAPI.GetLine(this.modelID, boundRef.value);
+          if (!bound || !bound.Bound) {
+            continue;
+          }
+
+          // Get the polyloop
+          const loop = this.ifcAPI.GetLine(this.modelID, bound.Bound.value);
+          if (!loop || !loop.Polygon) {
+            continue;
+          }
+
+          // Extract vertices from polyloop
+          const vertices = [];
+          for (const pointRef of loop.Polygon) {
+            const point = this.ifcAPI.GetLine(this.modelID, pointRef.value);
+            if (point && point.Coordinates) {
+              const x = point.Coordinates[0]?.value ?? point.Coordinates[0] ?? 0;
+              const y = point.Coordinates[1]?.value ?? point.Coordinates[1] ?? 0;
+              const z = point.Coordinates[2]?.value ?? point.Coordinates[2] ?? 0;
+
+              const transformedPoint = transformPoint({ x, y, z }, placementMatrix);
+              vertices.push(transformedPoint);
+            }
+          }
+
+          if (vertices.length >= 3) {
+            const normal = calculateFaceNormal(vertices);
+            const area = calculateFaceArea(vertices);
+            const surfaceType = classifySurfaceByNormal(normal);
+
+            // Check orientation flag
+            const orientation = bound.Orientation?.value ?? true;
+            const adjustedNormal = orientation ? normal : {
+              x: -normal.x,
+              y: -normal.y,
+              z: -normal.z,
+            };
+
+            faces.push({
+              name: `${namePrefix}_${faceIndex}`,
+              vertices,
+              normal: adjustedNormal,
+              area,
+              surfaceType: classifySurfaceByNormal(adjustedNormal),
+              vertexCount: vertices.length,
+            });
+          }
+
+          faceIndex++;
+        }
+      }
+    } catch (error) {
+      console.warn(`Error extracting FacetedBrep faces:`, error);
+    }
+
+    return faces;
+  }
+
+  /**
+   * Extract faces from IfcExtrudedAreaSolid
+   * Generates top, bottom, and side faces from extrusion
+   * @param {Object} solid - IfcExtrudedAreaSolid entity
+   * @param {Array} placementMatrix - 4x4 transformation matrix
+   * @param {string} namePrefix - Name prefix for faces
+   * @returns {Array} Array of face objects
+   * @private
+   */
+  _extractFacesFromExtrudedAreaSolid(solid, placementMatrix, namePrefix) {
+    const faces = [];
+
+    try {
+      // Get extrusion depth
+      const depth = solid.Depth?.value ?? solid.Depth ?? 0;
+      if (depth === 0) {
+        return faces;
+      }
+
+      // Get extrusion direction
+      let extrudeDir = { x: 0, y: 0, z: 1 }; // Default: Z direction
+      if (solid.ExtrudedDirection) {
+        const dir = this.ifcAPI.GetLine(this.modelID, solid.ExtrudedDirection.value);
+        if (dir && dir.DirectionRatios) {
+          extrudeDir = {
+            x: dir.DirectionRatios[0]?.value ?? dir.DirectionRatios[0] ?? 0,
+            y: dir.DirectionRatios[1]?.value ?? dir.DirectionRatios[1] ?? 0,
+            z: dir.DirectionRatios[2]?.value ?? dir.DirectionRatios[2] ?? 0,
+          };
+        }
+      }
+
+      // Get local placement matrix for the solid
+      let solidMatrix = identityMatrix();
+      if (solid.Position) {
+        solidMatrix = this._getPlacementMatrix(solid.Position.value);
+      }
+
+      // Combine with parent placement
+      const combinedMatrix = multiplyMatrices(placementMatrix, solidMatrix);
+
+      // Get profile (swept area)
+      if (!solid.SweptArea) {
+        return faces;
+      }
+
+      const profile = this.ifcAPI.GetLine(this.modelID, solid.SweptArea.value);
+      if (!profile) {
+        return faces;
+      }
+
+      // Extract profile points
+      const profilePoints = this._extractProfilePoints(profile);
+      if (profilePoints.length < 3) {
+        return faces;
+      }
+
+      // Transform profile points and create bottom face
+      const bottomVertices = profilePoints.map(p => transformPoint(p, combinedMatrix));
+
+      // Create top face by offsetting along extrusion direction
+      const topVertices = bottomVertices.map(p => ({
+        x: p.x + extrudeDir.x * depth,
+        y: p.y + extrudeDir.y * depth,
+        z: p.z + extrudeDir.z * depth,
+      }));
+
+      // Add bottom face
+      const bottomNormal = calculateFaceNormal(bottomVertices);
+      const bottomArea = calculateFaceArea(bottomVertices);
+      faces.push({
+        name: `${namePrefix}_bottom`,
+        vertices: bottomVertices,
+        normal: bottomNormal,
+        area: bottomArea,
+        surfaceType: classifySurfaceByNormal(bottomNormal),
+        vertexCount: bottomVertices.length,
+      });
+
+      // Add top face (reverse winding)
+      const topVerticesReversed = [...topVertices].reverse();
+      const topNormal = calculateFaceNormal(topVerticesReversed);
+      const topArea = calculateFaceArea(topVerticesReversed);
+      faces.push({
+        name: `${namePrefix}_top`,
+        vertices: topVerticesReversed,
+        normal: topNormal,
+        area: topArea,
+        surfaceType: classifySurfaceByNormal(topNormal),
+        vertexCount: topVerticesReversed.length,
+      });
+
+      // Add side faces
+      const n = bottomVertices.length;
+      for (let i = 0; i < n; i++) {
+        const next = (i + 1) % n;
+        const sideVertices = [
+          bottomVertices[i],
+          bottomVertices[next],
+          topVertices[next],
+          topVertices[i],
+        ];
+
+        const sideNormal = calculateFaceNormal(sideVertices);
+        const sideArea = calculateFaceArea(sideVertices);
+        faces.push({
+          name: `${namePrefix}_side_${i}`,
+          vertices: sideVertices,
+          normal: sideNormal,
+          area: sideArea,
+          surfaceType: classifySurfaceByNormal(sideNormal),
+          vertexCount: 4,
+        });
+      }
+    } catch (error) {
+      console.warn(`Error extracting ExtrudedAreaSolid faces:`, error);
+    }
+
+    return faces;
+  }
+
+  /**
+   * Extract profile points from an IFC profile definition
+   * @param {Object} profile - IFC profile definition
+   * @returns {Array} Array of 3D points
+   * @private
+   */
+  _extractProfilePoints(profile) {
+    const points = [];
+    const typeName = this._getTypeName(profile.type);
+
+    try {
+      if (typeName.includes('ArbitraryClosedProfileDef') || typeName.includes('ArbitraryProfileDefWithVoids')) {
+        // Get outer curve
+        if (profile.OuterCurve) {
+          const curve = this.ifcAPI.GetLine(this.modelID, profile.OuterCurve.value);
+          points.push(...this._extractCurvePoints(curve));
+        }
+      } else if (typeName.includes('RectangleProfileDef')) {
+        // Rectangle profile
+        const xDim = profile.XDim?.value ?? profile.XDim ?? 1;
+        const yDim = profile.YDim?.value ?? profile.YDim ?? 1;
+        const halfX = xDim / 2;
+        const halfY = yDim / 2;
+
+        points.push(
+          { x: -halfX, y: -halfY, z: 0 },
+          { x: halfX, y: -halfY, z: 0 },
+          { x: halfX, y: halfY, z: 0 },
+          { x: -halfX, y: halfY, z: 0 }
+        );
+      } else if (typeName.includes('CircleProfileDef')) {
+        // Approximate circle with polygon
+        const radius = profile.Radius?.value ?? profile.Radius ?? 1;
+        const segments = 16;
+        for (let i = 0; i < segments; i++) {
+          const angle = (i / segments) * Math.PI * 2;
+          points.push({
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius,
+            z: 0,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`Error extracting profile points:`, error);
+    }
+
+    return points;
+  }
+
+  /**
+   * Extract points from an IFC curve
+   * @param {Object} curve - IFC curve entity
+   * @returns {Array} Array of 3D points
+   * @private
+   */
+  _extractCurvePoints(curve) {
+    const points = [];
+
+    try {
+      if (!curve) return points;
+
+      const typeName = this._getTypeName(curve.type);
+
+      if (typeName.includes('Polyline') && curve.Points) {
+        for (const pointRef of curve.Points) {
+          const point = this.ifcAPI.GetLine(this.modelID, pointRef.value);
+          if (point && point.Coordinates) {
+            points.push({
+              x: point.Coordinates[0]?.value ?? point.Coordinates[0] ?? 0,
+              y: point.Coordinates[1]?.value ?? point.Coordinates[1] ?? 0,
+              z: point.Coordinates[2]?.value ?? point.Coordinates[2] ?? 0,
+            });
+          }
+        }
+      } else if (typeName.includes('IndexedPolyCurve') && curve.Points) {
+        // IfcIndexedPolyCurve - get points from coordinate list
+        const coordList = this.ifcAPI.GetLine(this.modelID, curve.Points.value);
+        if (coordList && coordList.CoordList) {
+          for (const coord of coordList.CoordList) {
+            points.push({
+              x: coord[0]?.value ?? coord[0] ?? 0,
+              y: coord[1]?.value ?? coord[1] ?? 0,
+              z: coord[2]?.value ?? coord[2] ?? 0,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Error extracting curve points:`, error);
+    }
+
+    return points;
+  }
+
+  /**
+   * Extract faces from IfcMappedItem (geometry reuse)
+   * @param {Object} mappedItem - IfcMappedItem entity
+   * @param {Array} placementMatrix - Parent 4x4 transformation matrix
+   * @param {string} namePrefix - Name prefix for faces
+   * @returns {Array} Array of face objects
+   * @private
+   */
+  _extractFacesFromMappedItem(mappedItem, placementMatrix, namePrefix) {
+    const faces = [];
+
+    try {
+      if (!mappedItem.MappingSource) {
+        return faces;
+      }
+
+      // Get the mapping source (representation map)
+      const repMap = this.ifcAPI.GetLine(this.modelID, mappedItem.MappingSource.value);
+      if (!repMap) {
+        return faces;
+      }
+
+      // Get origin placement from mapping source
+      let originMatrix = identityMatrix();
+      if (repMap.MappingOrigin) {
+        originMatrix = this._getPlacementMatrix(repMap.MappingOrigin.value);
+      }
+
+      // Get target placement
+      let targetMatrix = identityMatrix();
+      if (mappedItem.MappingTarget) {
+        targetMatrix = this._getCartesianTransformationMatrix(mappedItem.MappingTarget.value);
+      }
+
+      // Combine matrices: parent × origin × target
+      const combinedMatrix = multiplyMatrices(
+        placementMatrix,
+        multiplyMatrices(originMatrix, targetMatrix)
+      );
+
+      // Get mapped representation
+      if (repMap.MappedRepresentation) {
+        const representation = this.ifcAPI.GetLine(this.modelID, repMap.MappedRepresentation.value);
+        if (representation && representation.Items) {
+          for (const itemRef of representation.Items) {
+            const item = this.ifcAPI.GetLine(this.modelID, itemRef.value);
+            if (item) {
+              const extractedFaces = this._extractFacesFromItem(item, combinedMatrix, namePrefix);
+              faces.push(...extractedFaces);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`Error extracting MappedItem faces:`, error);
+    }
+
+    return faces;
+  }
+
+  /**
+   * Get 4x4 placement matrix from IfcAxis2Placement3D
+   * @param {number} placementID - Express ID of placement
+   * @returns {Array} 4x4 matrix in column-major order
+   * @private
+   */
+  _getPlacementMatrix(placementID) {
+    const matrix = identityMatrix();
+
+    try {
+      const placement = this.ifcAPI.GetLine(this.modelID, placementID);
+      if (!placement) return matrix;
+
+      // Get location
+      let location = { x: 0, y: 0, z: 0 };
+      if (placement.Location) {
+        const locPoint = this.ifcAPI.GetLine(this.modelID, placement.Location.value);
+        if (locPoint && locPoint.Coordinates) {
+          location = {
+            x: locPoint.Coordinates[0]?.value ?? locPoint.Coordinates[0] ?? 0,
+            y: locPoint.Coordinates[1]?.value ?? locPoint.Coordinates[1] ?? 0,
+            z: locPoint.Coordinates[2]?.value ?? locPoint.Coordinates[2] ?? 0,
+          };
+        }
+      }
+
+      // Get axis (Z direction)
+      let zAxis = { x: 0, y: 0, z: 1 };
+      if (placement.Axis) {
+        const axisDir = this.ifcAPI.GetLine(this.modelID, placement.Axis.value);
+        if (axisDir && axisDir.DirectionRatios) {
+          zAxis = {
+            x: axisDir.DirectionRatios[0]?.value ?? axisDir.DirectionRatios[0] ?? 0,
+            y: axisDir.DirectionRatios[1]?.value ?? axisDir.DirectionRatios[1] ?? 0,
+            z: axisDir.DirectionRatios[2]?.value ?? axisDir.DirectionRatios[2] ?? 1,
+          };
+        }
+      }
+
+      // Get ref direction (X direction)
+      let xAxis = { x: 1, y: 0, z: 0 };
+      if (placement.RefDirection) {
+        const refDir = this.ifcAPI.GetLine(this.modelID, placement.RefDirection.value);
+        if (refDir && refDir.DirectionRatios) {
+          xAxis = {
+            x: refDir.DirectionRatios[0]?.value ?? refDir.DirectionRatios[0] ?? 1,
+            y: refDir.DirectionRatios[1]?.value ?? refDir.DirectionRatios[1] ?? 0,
+            z: refDir.DirectionRatios[2]?.value ?? refDir.DirectionRatios[2] ?? 0,
+          };
+        }
+      }
+
+      // Normalize and orthogonalize
+      const zLen = Math.sqrt(zAxis.x ** 2 + zAxis.y ** 2 + zAxis.z ** 2);
+      zAxis = { x: zAxis.x / zLen, y: zAxis.y / zLen, z: zAxis.z / zLen };
+
+      // Y = Z × X (cross product)
+      const yAxis = {
+        x: zAxis.y * xAxis.z - zAxis.z * xAxis.y,
+        y: zAxis.z * xAxis.x - zAxis.x * xAxis.z,
+        z: zAxis.x * xAxis.y - zAxis.y * xAxis.x,
+      };
+      const yLen = Math.sqrt(yAxis.x ** 2 + yAxis.y ** 2 + yAxis.z ** 2);
+      if (yLen > 0) {
+        yAxis.x /= yLen;
+        yAxis.y /= yLen;
+        yAxis.z /= yLen;
+      }
+
+      // Recalculate X = Y × Z for orthogonality
+      xAxis = {
+        x: yAxis.y * zAxis.z - yAxis.z * zAxis.y,
+        y: yAxis.z * zAxis.x - yAxis.x * zAxis.z,
+        z: yAxis.x * zAxis.y - yAxis.y * zAxis.x,
+      };
+
+      // Build column-major matrix
+      return [
+        xAxis.x, xAxis.y, xAxis.z, 0,
+        yAxis.x, yAxis.y, yAxis.z, 0,
+        zAxis.x, zAxis.y, zAxis.z, 0,
+        location.x, location.y, location.z, 1,
+      ];
+    } catch (error) {
+      console.warn(`Error getting placement matrix:`, error);
+    }
+
+    return matrix;
+  }
+
+  /**
+   * Get 4x4 matrix from IfcCartesianTransformationOperator3D
+   * @param {number} transformID - Express ID of transformation
+   * @returns {Array} 4x4 matrix in column-major order
+   * @private
+   */
+  _getCartesianTransformationMatrix(transformID) {
+    const matrix = identityMatrix();
+
+    try {
+      const transform = this.ifcAPI.GetLine(this.modelID, transformID);
+      if (!transform) return matrix;
+
+      // Get scale
+      const scale = transform.Scale?.value ?? transform.Scale ?? 1;
+
+      // Get local origin
+      let origin = { x: 0, y: 0, z: 0 };
+      if (transform.LocalOrigin) {
+        const locPoint = this.ifcAPI.GetLine(this.modelID, transform.LocalOrigin.value);
+        if (locPoint && locPoint.Coordinates) {
+          origin = {
+            x: locPoint.Coordinates[0]?.value ?? locPoint.Coordinates[0] ?? 0,
+            y: locPoint.Coordinates[1]?.value ?? locPoint.Coordinates[1] ?? 0,
+            z: locPoint.Coordinates[2]?.value ?? locPoint.Coordinates[2] ?? 0,
+          };
+        }
+      }
+
+      // Get axis directions
+      let axis1 = { x: 1, y: 0, z: 0 };
+      let axis2 = { x: 0, y: 1, z: 0 };
+      let axis3 = { x: 0, y: 0, z: 1 };
+
+      if (transform.Axis1) {
+        const dir = this.ifcAPI.GetLine(this.modelID, transform.Axis1.value);
+        if (dir && dir.DirectionRatios) {
+          axis1 = {
+            x: dir.DirectionRatios[0]?.value ?? dir.DirectionRatios[0] ?? 1,
+            y: dir.DirectionRatios[1]?.value ?? dir.DirectionRatios[1] ?? 0,
+            z: dir.DirectionRatios[2]?.value ?? dir.DirectionRatios[2] ?? 0,
+          };
+        }
+      }
+
+      if (transform.Axis2) {
+        const dir = this.ifcAPI.GetLine(this.modelID, transform.Axis2.value);
+        if (dir && dir.DirectionRatios) {
+          axis2 = {
+            x: dir.DirectionRatios[0]?.value ?? dir.DirectionRatios[0] ?? 0,
+            y: dir.DirectionRatios[1]?.value ?? dir.DirectionRatios[1] ?? 1,
+            z: dir.DirectionRatios[2]?.value ?? dir.DirectionRatios[2] ?? 0,
+          };
+        }
+      }
+
+      if (transform.Axis3) {
+        const dir = this.ifcAPI.GetLine(this.modelID, transform.Axis3.value);
+        if (dir && dir.DirectionRatios) {
+          axis3 = {
+            x: dir.DirectionRatios[0]?.value ?? dir.DirectionRatios[0] ?? 0,
+            y: dir.DirectionRatios[1]?.value ?? dir.DirectionRatios[1] ?? 0,
+            z: dir.DirectionRatios[2]?.value ?? dir.DirectionRatios[2] ?? 1,
+          };
+        }
+      }
+
+      // Build column-major matrix with scale
+      return [
+        axis1.x * scale, axis1.y * scale, axis1.z * scale, 0,
+        axis2.x * scale, axis2.y * scale, axis2.z * scale, 0,
+        axis3.x * scale, axis3.y * scale, axis3.z * scale, 0,
+        origin.x, origin.y, origin.z, 1,
+      ];
+    } catch (error) {
+      console.warn(`Error getting cartesian transformation matrix:`, error);
+    }
+
+    return matrix;
+  }
+
+  /**
+   * Create Three.js BufferGeometry from extracted faces
+   * @param {Array} faces - Array of face objects from extraction
+   * @returns {THREE.BufferGeometry} Merged geometry for all faces
+   * @private
+   */
+  _createGeometryFromFaces(faces) {
+    if (!faces || faces.length === 0) {
+      return null;
+    }
+
+    // Collect all vertices and build triangulated indices
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    let vertexOffset = 0;
+
+    for (const face of faces) {
+      if (!face.vertices || face.vertices.length < 3) continue;
+
+      // Add vertices
+      for (const v of face.vertices) {
+        positions.push(v.x, v.y, v.z);
+        normals.push(face.normal.x, face.normal.y, face.normal.z);
+      }
+
+      // Triangulate using fan triangulation
+      const faceIndices = face.vertices.map((_, i) => i);
+      const triangles = fanTriangulate(faceIndices);
+
+      for (const tri of triangles) {
+        indices.push(
+          tri[0] + vertexOffset,
+          tri[1] + vertexOffset,
+          tri[2] + vertexOffset
+        );
+      }
+
+      vertexOffset += face.vertices.length;
+    }
+
+    if (positions.length === 0) {
+      return null;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+
+    return geometry;
   }
 
   /**
@@ -795,6 +1690,43 @@ export class IFCLoader {
    */
   getMesh(expressID) {
     return this.meshes.get(expressID) || null;
+  }
+
+  /**
+   * Get body faces for a space by express ID
+   * Returns the full 3D geometry faces including pitched ceilings, sloped surfaces, etc.
+   * @param {number} expressID - Express ID of the space
+   * @returns {Object|null} Object with bodyFaces, floorFaces, ceilingFaces, wallFaces or null
+   */
+  getSpaceBodyFaces(expressID) {
+    const space = this.spaces.find(s => s.expressID === expressID);
+    if (!space || !space.hasBodyGeometry) {
+      return null;
+    }
+
+    return {
+      bodyFaces: space.bodyFaces,
+      floorFaces: space.floorFaces,
+      ceilingFaces: space.ceilingFaces,
+      wallFaces: space.wallFaces,
+      totalCeilingArea: space.totalCeilingArea,
+      totalWallArea: space.totalWallArea,
+    };
+  }
+
+  /**
+   * Create Three.js geometry for a space's body faces
+   * Useful for visualization with accurate 3D geometry
+   * @param {number} expressID - Express ID of the space
+   * @returns {THREE.BufferGeometry|null} BufferGeometry or null if no body geometry
+   */
+  createSpaceBodyGeometry(expressID) {
+    const space = this.spaces.find(s => s.expressID === expressID);
+    if (!space || !space.hasBodyGeometry || space.bodyFaces.length === 0) {
+      return null;
+    }
+
+    return this._createGeometryFromFaces(space.bodyFaces);
   }
 
   /**
