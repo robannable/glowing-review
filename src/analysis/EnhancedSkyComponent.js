@@ -1,6 +1,7 @@
 /**
  * Enhanced Sky Component Calculator for DaylightLab
  * Uses Monte Carlo hemisphere sampling for improved accuracy
+ * Now includes obstruction checking for overshading from solid building fabric
  */
 import {
   subtractVectors,
@@ -10,6 +11,7 @@ import {
   vectorLength,
 } from '../utils/geometry.js';
 import { MAINTENANCE_FACTOR } from '../utils/constants.js';
+import { getObstructionManager } from './ObstructionManager.js';
 
 // Default number of hemisphere samples
 const DEFAULT_SAMPLE_COUNT = 144; // 12 altitude × 12 azimuth bands
@@ -17,18 +19,23 @@ const DEFAULT_SAMPLE_COUNT = 144; // 12 altitude × 12 azimuth bands
 /**
  * Calculate Sky Component using Monte Carlo hemisphere sampling
  * More accurate than analytical solid angle, especially for complex geometries
+ * Now includes obstruction checking for overshading from solid building fabric
  * @param {Object} point - Grid point position {x, y, z}
  * @param {Array} windows - Array of window objects
  * @param {Object} options - Calculation options
+ * @param {Object} obstructionManager - Optional ObstructionManager for shading analysis
  * @returns {number} Sky Component as percentage
  */
-export function calculateEnhancedSkyComponent(point, windows, options = {}) {
+export function calculateEnhancedSkyComponent(point, windows, options = {}, obstructionManager = null) {
   if (!windows || windows.length === 0) {
     return 0;
   }
 
   const sampleCount = options.sampleCount || DEFAULT_SAMPLE_COUNT;
   const useStratified = options.stratified !== false;
+
+  // Use provided obstruction manager or try to get global instance
+  const obstructions = obstructionManager || (options.useObstructions ? getObstructionManager() : null);
 
   // Generate hemisphere sample directions
   const samples = useStratified
@@ -43,21 +50,34 @@ export function calculateEnhancedSkyComponent(point, windows, options = {}) {
     const windowHit = traceRayToWindows(point, sample.direction, windows);
 
     if (windowHit) {
-      // CIE overcast sky luminance factor for this altitude
-      // L(θ) = Lz × (1 + 2 sin θ) / 3
-      const cieFactor = (1 + 2 * Math.sin(sample.altitude)) / 3;
+      // Check if path to window is blocked by building fabric (overshading)
+      let obstructionFactor = 1.0;
+      if (obstructions && obstructions.isInitialized) {
+        const result = obstructions.isRayBlocked(point, windowHit.point);
+        if (result.blocked) {
+          // Ray is blocked by building fabric before reaching window
+          obstructionFactor = 0;
+        }
+      }
 
-      // Cosine weighting (Lambert's cosine law)
-      const cosineWeight = Math.sin(sample.altitude);
+      if (obstructionFactor > 0) {
+        // CIE overcast sky luminance factor for this altitude
+        // L(θ) = Lz × (1 + 2 sin θ) / 3
+        const cieFactor = (1 + 2 * Math.sin(sample.altitude)) / 3;
 
-      // Window transmittance and reveal correction
-      const transmittance = windowHit.window.transmittance || 0.7;
-      const revealFactor = windowHit.revealFactor || 1.0;
+        // Cosine weighting (Lambert's cosine law)
+        const cosineWeight = Math.sin(sample.altitude);
 
-      // Contribution from this sample
-      const contribution = cieFactor * cosineWeight * transmittance * revealFactor * MAINTENANCE_FACTOR;
+        // Window transmittance and reveal correction
+        const transmittance = windowHit.window.transmittance || 0.7;
+        const revealFactor = windowHit.revealFactor || 1.0;
 
-      totalContribution += contribution * sample.weight;
+        // Contribution from this sample (with obstruction factor)
+        const contribution = cieFactor * cosineWeight * transmittance * revealFactor *
+                             MAINTENANCE_FACTOR * obstructionFactor;
+
+        totalContribution += contribution * sample.weight;
+      }
     }
 
     totalWeight += sample.weight;
@@ -310,16 +330,17 @@ function calculateRevealFactor(hit, window) {
  * @param {Object} point - Grid point
  * @param {Array} windows - Windows with revealDepth property
  * @param {Object} options - Options including revealDepth handling
+ * @param {Object} obstructionManager - Optional ObstructionManager for shading analysis
  * @returns {number} Sky component percentage
  */
-export function calculateSkyComponentWithReveals(point, windows, options = {}) {
+export function calculateSkyComponentWithReveals(point, windows, options = {}, obstructionManager = null) {
   // Pre-process windows to add reveal information if not present
   const processedWindows = windows.map(w => ({
     ...w,
     revealDepth: w.revealDepth || options.defaultRevealDepth || 0,
   }));
 
-  return calculateEnhancedSkyComponent(point, processedWindows, options);
+  return calculateEnhancedSkyComponent(point, processedWindows, options, obstructionManager);
 }
 
 /**
@@ -328,14 +349,15 @@ export function calculateSkyComponentWithReveals(point, windows, options = {}) {
  * @param {Array} windows - Array of windows
  * @param {Object} options - Calculation options
  * @param {Function} onProgress - Progress callback (pointIndex, total)
+ * @param {Object} obstructionManager - Optional ObstructionManager for shading analysis
  * @returns {Array} Array of sky component values
  */
-export async function batchCalculateEnhancedSkyComponent(points, windows, options = {}, onProgress = null) {
+export async function batchCalculateEnhancedSkyComponent(points, windows, options = {}, onProgress = null, obstructionManager = null) {
   const results = [];
   const total = points.length;
 
   for (let i = 0; i < total; i++) {
-    const sc = calculateEnhancedSkyComponent(points[i].position, windows, options);
+    const sc = calculateEnhancedSkyComponent(points[i].position, windows, options, obstructionManager);
     results.push(sc);
 
     // Report progress and yield to main thread periodically

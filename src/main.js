@@ -291,8 +291,13 @@ class DaylightLab {
           workPlaneHeight: settings.workPlaneHeight,
           reflectances: settings.reflectances,
           enhancedMode: settings.enhancedMode,
+          includeObstructions: true, // Enable building fabric overshading analysis
         }
       );
+
+      // Load obstruction meshes for overshading analysis from solid building fabric
+      const obstructionMeshes = this.ifcLoader.getObstructionMeshesForRoom(this.currentRoom);
+      this.calculator.setObstructionMeshes(obstructionMeshes);
 
       // Set progress callback
       this.calculator.onProgress = (message, percent) => {
@@ -311,7 +316,13 @@ class DaylightLab {
         statistics: results.statistics,
         mode: results.mode,
         baseIRC: results.baseIRC,
+        obstructionAnalysis: results.obstructionAnalysis,
       });
+
+      // Log obstruction analysis status
+      if (results.obstructionAnalysis?.active) {
+        console.log(`Building fabric overshading analysis: ${results.obstructionAnalysis.meshCount} elements, ${results.obstructionAnalysis.triangleCount} triangles`);
+      }
 
       // Sample a few grid points to check SC vs IRC distribution
       if (results.grid && results.grid.length > 0) {
@@ -484,7 +495,7 @@ class DaylightLab {
 
       this.ui.showLoading('Starting batch analysis...', 0);
 
-      // Run batch analysis
+      // Run batch analysis (includes building fabric overshading when ifcLoader is provided)
       this.batchResults = await runBatchAnalysis(
         rooms,
         this.windowDetector,
@@ -496,7 +507,8 @@ class DaylightLab {
         },
         (message, percent) => {
           this.ui.showLoading(message, percent);
-        }
+        },
+        this.ifcLoader // Pass IFC loader for obstruction mesh access
       );
 
       // Generate summary
@@ -672,7 +684,7 @@ class DaylightLab {
         return;
       }
 
-      // Run batch analysis on comparison model
+      // Run batch analysis on comparison model (includes building fabric overshading)
       const settings = this.ui.getSettings();
 
       const comparisonResults = await runBatchAnalysis(
@@ -686,7 +698,8 @@ class DaylightLab {
         },
         (message, percent) => {
           this.ui.showLoading(`Comparison: ${message}`, 30 + percent * 0.7);
-        }
+        },
+        comparisonLoader // Pass comparison IFC loader for obstruction mesh access
       );
 
       const comparisonSummary = generateBatchSummary(comparisonResults);

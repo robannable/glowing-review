@@ -1,6 +1,7 @@
 /**
  * Sky Component Calculator for DaylightLab
  * Calculates the Sky Component (SC) of Daylight Factor
+ * Now includes obstruction checking for overshading from solid building fabric
  */
 import {
   subtractVectors,
@@ -16,9 +17,10 @@ import { MAINTENANCE_FACTOR } from '../utils/constants.js';
  * Calculate Sky Component at a grid point
  * @param {Object} point - Grid point position {x, y, z}
  * @param {Array} windows - Array of window objects
+ * @param {Object} obstructionManager - Optional ObstructionManager for shading analysis
  * @returns {number} Sky Component as percentage
  */
-export function calculateSkyComponent(point, windows) {
+export function calculateSkyComponent(point, windows, obstructionManager = null) {
   if (!windows || windows.length === 0) {
     return 0;
   }
@@ -54,6 +56,13 @@ export function calculateSkyComponent(point, windows) {
 
     if (solidAngle <= 0) continue;
 
+    // Check for obstructions between point and window (overshading from building fabric)
+    let visibilityFactor = 1.0;
+    if (obstructionManager && obstructionManager.isInitialized) {
+      visibilityFactor = obstructionManager.calculateWindowVisibility(point, window, 5);
+      if (visibilityFactor <= 0) continue; // Window fully blocked
+    }
+
     // CIE overcast sky luminance factor
     // L(θ) = Lz × (1 + 2 sin θ) / 3
     const cieFactor = (1 + 2 * Math.sin(altitude)) / 3;
@@ -63,12 +72,13 @@ export function calculateSkyComponent(point, windows) {
     const cosineCorrection = Math.abs(facingDot);
 
     // Sky Component contribution from this window
-    // SC = (solid angle / hemisphere) × CIE factor × transmittance × maintenance
+    // SC = (solid angle / hemisphere) × CIE factor × transmittance × maintenance × visibility
     const windowSC = (solidAngle / (2 * Math.PI)) *
                      cieFactor *
                      cosineCorrection *
                      window.transmittance *
-                     MAINTENANCE_FACTOR;
+                     MAINTENANCE_FACTOR *
+                     visibilityFactor; // Apply overshading reduction
 
     totalSC += windowSC * 100; // Convert to percentage
   }
@@ -187,14 +197,14 @@ function approximateSolidAngle(point, window) {
 
 /**
  * Calculate position-dependent visibility factor
- * Accounts for partial obstruction of windows from certain positions
+ * Accounts for obstruction of windows by solid building fabric
  * @param {Object} point - Grid point
  * @param {Object} window - Window object
  * @param {Object} room - Room geometry
+ * @param {Object} obstructionManager - Optional ObstructionManager for shading analysis
  * @returns {number} Visibility factor (0 to 1)
  */
-export function calculateVisibilityFactor(point, window, room) {
-  // Basic implementation - could be extended with ray casting
+export function calculateVisibilityFactor(point, window, room, obstructionManager = null) {
   const toWindow = subtractVectors(window.centre, point);
   const distance = vectorLength(toWindow);
 
@@ -210,6 +220,11 @@ export function calculateVisibilityFactor(point, window, room) {
     }
   }
 
-  // Simple visibility - full visibility if within room
+  // Use obstruction manager for accurate ray-casting if available
+  if (obstructionManager && obstructionManager.isInitialized) {
+    return obstructionManager.calculateWindowVisibility(point, window, 5);
+  }
+
+  // Fallback: full visibility if within room and no obstruction manager
   return 1.0;
 }

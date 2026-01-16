@@ -119,9 +119,10 @@ export function generateRecommendation(room, windows, stats) {
  * @param {Object} windowDetector - Window detector instance
  * @param {Object} options - Calculation options
  * @param {Function} onProgress - Progress callback
+ * @param {Object} ifcLoader - Optional IFC loader for obstruction meshes
  * @returns {Promise<Array>} Array of results for each room
  */
-export async function runBatchAnalysis(rooms, windowDetector, options = {}, onProgress = null) {
+export async function runBatchAnalysis(rooms, windowDetector, options = {}, onProgress = null, ifcLoader = null) {
   const results = [];
   const totalRooms = rooms.length;
 
@@ -136,8 +137,17 @@ export async function runBatchAnalysis(rooms, windowDetector, options = {}, onPr
     const windows = windowDetector.findRoomWindows(room);
 
     try {
-      // Create calculator
-      const calculator = new DaylightCalculator(room, windows, options);
+      // Create calculator with obstruction analysis enabled
+      const calculator = new DaylightCalculator(room, windows, {
+        ...options,
+        includeObstructions: true,
+      });
+
+      // Load obstruction meshes if IFC loader available
+      if (ifcLoader && typeof ifcLoader.getObstructionMeshesForRoom === 'function') {
+        const obstructionMeshes = ifcLoader.getObstructionMeshesForRoom(room);
+        calculator.setObstructionMeshes(obstructionMeshes);
+      }
 
       // Run calculation
       const calcResults = await calculator.calculate();

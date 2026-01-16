@@ -29,6 +29,7 @@ export class IFCLoader {
     this.spaces = [];
     this.windows = [];
     this.glazedDoors = [];
+    this.obstructionMeshes = []; // Solid building fabric for overshading analysis
     this.materials = createDefaultMaterials();
   }
 
@@ -90,10 +91,15 @@ export class IFCLoader {
     // Extract windows
     await this._extractWindows();
 
-    this._reportProgress('Processing glazed doors...', 90);
+    this._reportProgress('Processing glazed doors...', 85);
 
     // Extract glazed doors
     await this._extractGlazedDoors();
+
+    this._reportProgress('Extracting solid fabric for shading...', 90);
+
+    // Extract solid building fabric for overshading analysis
+    this._extractObstructionMeshes();
 
     this._reportProgress('Complete', 100);
 
@@ -765,6 +771,85 @@ export class IFCLoader {
   }
 
   /**
+   * Extract solid building fabric meshes for overshading analysis
+   * Includes walls, slabs, roofs - elements that can block light paths
+   * @private
+   */
+  _extractObstructionMeshes() {
+    this.obstructionMeshes = [];
+
+    // Solid element types that can cause overshading
+    const obstructionTypes = ['wall', 'slab'];
+
+    // Window and door express IDs to exclude (we want to see through these)
+    const windowIDs = new Set(this.windows.map(w => w.expressID));
+    const doorIDs = new Set(this.glazedDoors.map(d => d.expressID));
+    const spaceIDs = new Set(this.spaces.map(s => s.expressID));
+
+    for (const [expressID, mesh] of this.meshes) {
+      // Skip windows, glazed doors, and spaces
+      if (windowIDs.has(expressID) || doorIDs.has(expressID) || spaceIDs.has(expressID)) {
+        continue;
+      }
+
+      const elementType = mesh.userData.elementType;
+
+      // Include walls and slabs as potential obstructions
+      if (obstructionTypes.includes(elementType)) {
+        // Clone the mesh for obstruction testing to avoid affecting visualization
+        const obstructionMesh = mesh.clone();
+        obstructionMesh.userData.expressID = expressID;
+        obstructionMesh.userData.obstructionType = elementType;
+
+        this.obstructionMeshes.push(obstructionMesh);
+      }
+    }
+
+    console.log(`Extracted ${this.obstructionMeshes.length} obstruction meshes (walls/slabs) for shading analysis`);
+  }
+
+  /**
+   * Get obstruction meshes for a specific room
+   * Returns solid elements that could shade the room's windows
+   * @param {Object} room - Room object with boundingBox
+   * @param {number} expandDistance - Distance to expand search beyond room bounds (default 5m)
+   * @returns {Array} Array of Three.js meshes for obstruction testing
+   */
+  getObstructionMeshesForRoom(room, expandDistance = 5) {
+    if (!room || !room.boundingBox) {
+      return this.obstructionMeshes;
+    }
+
+    // Expand room bounds to capture nearby obstructions
+    const expandedBounds = {
+      minX: room.boundingBox.minX - expandDistance,
+      minY: room.boundingBox.minY - expandDistance,
+      minZ: room.boundingBox.minZ - expandDistance,
+      maxX: room.boundingBox.maxX + expandDistance,
+      maxY: room.boundingBox.maxY + expandDistance,
+      maxZ: room.boundingBox.maxZ + expandDistance,
+    };
+
+    // Filter obstructions that are near the room
+    return this.obstructionMeshes.filter(mesh => {
+      if (!mesh.geometry) return false;
+
+      mesh.geometry.computeBoundingBox();
+      const bbox = mesh.geometry.boundingBox;
+
+      // Check if mesh bounding box overlaps with expanded room bounds
+      return !(
+        bbox.max.x < expandedBounds.minX ||
+        bbox.min.x > expandedBounds.maxX ||
+        bbox.max.y < expandedBounds.minY ||
+        bbox.min.y > expandedBounds.maxY ||
+        bbox.max.z < expandedBounds.minZ ||
+        bbox.min.z > expandedBounds.maxZ
+      );
+    });
+  }
+
+  /**
    * Get all extracted spaces
    * @returns {Array} Array of space objects
    */
@@ -786,6 +871,14 @@ export class IFCLoader {
    */
   getGlazedDoors() {
     return this.glazedDoors;
+  }
+
+  /**
+   * Get all obstruction meshes (solid building fabric)
+   * @returns {Array} Array of Three.js meshes
+   */
+  getObstructionMeshes() {
+    return this.obstructionMeshes;
   }
 
   /**
@@ -822,6 +915,12 @@ export class IFCLoader {
     this.spaces = [];
     this.windows = [];
     this.glazedDoors = [];
+
+    // Dispose obstruction meshes
+    for (const mesh of this.obstructionMeshes) {
+      if (mesh.geometry) mesh.geometry.dispose();
+    }
+    this.obstructionMeshes = [];
 
     // Dispose materials
     Object.values(this.materials).forEach(m => m.dispose());
