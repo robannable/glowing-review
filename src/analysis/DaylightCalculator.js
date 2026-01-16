@@ -1,12 +1,14 @@
 /**
  * Daylight Calculator for DaylightLab
  * Main calculation engine that orchestrates all daylight calculations
+ * Now includes building fabric overshading analysis
  */
 import { generateGrid, generateGridFromBoundingBox, estimateGridCount } from './GridGenerator.js';
 import { calculateSkyComponent } from './SkyComponent.js';
 import { calculateIRC, calculatePositionalIRC } from './ReflectedComponent.js';
 import { calculateEnhancedSkyComponent } from './EnhancedSkyComponent.js';
 import { calculateFullEnhancedIRC } from './EnhancedIRC.js';
+import { createObstructionManager } from './ObstructionManager.js';
 import { DEFAULT_REFLECTANCES, DEFAULT_GRID_SPACING, DEFAULT_WORK_PLANE_HEIGHT } from '../utils/constants.js';
 
 export class DaylightCalculator {
@@ -28,14 +30,38 @@ export class DaylightCalculator {
       // Enhanced mode options
       enhancedMode: options.enhancedMode || false,
       sampleCount: options.sampleCount || 144, // For Monte Carlo sampling
+      // Building fabric overshading options
+      includeObstructions: options.includeObstructions !== false, // Default: include obstructions
     };
 
     this.grid = [];
     this.baseIRC = 0;
     this.statistics = null;
 
+    // Obstruction manager for building fabric shading analysis
+    this.obstructionManager = createObstructionManager();
+
     this.onProgress = null;
     this.cancelled = false;
+  }
+
+  /**
+   * Set obstruction meshes for overshading analysis
+   * @param {Array} meshes - Array of Three.js meshes representing solid building fabric
+   */
+  setObstructionMeshes(meshes) {
+    if (this.options.includeObstructions && meshes && meshes.length > 0) {
+      this.obstructionManager.setObstructionMeshes(meshes);
+      console.log(`DaylightCalculator: Loaded ${meshes.length} obstruction meshes for shading analysis`);
+    }
+  }
+
+  /**
+   * Get obstruction statistics
+   * @returns {Object} Obstruction geometry statistics
+   */
+  getObstructionStats() {
+    return this.obstructionManager.getStats();
   }
 
   /**
@@ -84,16 +110,26 @@ export class DaylightCalculator {
 
     this._reportProgress('Complete', 100);
 
+    // Include obstruction analysis info in results
+    const obstructionStats = this.obstructionManager.getStats();
+
     return {
       grid: this.grid,
       statistics: this.statistics,
       baseIRC: this.baseIRC,
       mode: mode,
+      obstructionAnalysis: {
+        enabled: this.options.includeObstructions,
+        meshCount: obstructionStats.meshCount,
+        triangleCount: obstructionStats.triangleCount,
+        active: obstructionStats.isInitialized && this.options.includeObstructions,
+      },
     };
   }
 
   /**
    * Standard calculation using BRE split-flux method
+   * Now includes building fabric overshading when obstruction meshes are loaded
    * @private
    */
   async _calculateStandard() {
@@ -102,9 +138,18 @@ export class DaylightCalculator {
     this.baseIRC = calculateIRC(this.room, this.windows, this.options.reflectances);
     console.log(`Base IRC: ${this.baseIRC.toFixed(2)}%`);
 
+    // Log obstruction status
+    const obstructionStats = this.obstructionManager.getStats();
+    if (obstructionStats.isInitialized) {
+      console.log(`Including ${obstructionStats.meshCount} building fabric elements in overshading analysis`);
+    }
+
     // Calculate SC for each grid point
     const totalPoints = this.grid.length;
     let processedPoints = 0;
+
+    // Get obstruction manager for sky component calculation (if enabled)
+    const obstructions = this.options.includeObstructions ? this.obstructionManager : null;
 
     for (let i = 0; i < totalPoints; i++) {
       if (this.cancelled) {
@@ -113,8 +158,8 @@ export class DaylightCalculator {
 
       const point = this.grid[i];
 
-      // Calculate Sky Component
-      point.skyComponent = calculateSkyComponent(point.position, this.windows);
+      // Calculate Sky Component (with obstruction checking for overshading)
+      point.skyComponent = calculateSkyComponent(point.position, this.windows, obstructions);
 
       // Calculate IRC (position-dependent if enabled)
       if (this.options.usePositionalIRC) {
@@ -150,13 +195,23 @@ export class DaylightCalculator {
   /**
    * Enhanced calculation using Monte Carlo sampling
    * More accurate but slower
+   * Now includes building fabric overshading when obstruction meshes are loaded
    * @private
    */
   async _calculateEnhanced() {
     this._reportProgress('Enhanced mode: Monte Carlo sampling...', 10);
 
+    // Log obstruction status
+    const obstructionStats = this.obstructionManager.getStats();
+    if (obstructionStats.isInitialized) {
+      console.log(`Including ${obstructionStats.meshCount} building fabric elements in overshading analysis (enhanced mode)`);
+    }
+
     const totalPoints = this.grid.length;
     let processedPoints = 0;
+
+    // Get obstruction manager for sky component calculation (if enabled)
+    const obstructions = this.options.includeObstructions ? this.obstructionManager : null;
 
     // Enhanced options
     const scOptions = {
@@ -176,11 +231,12 @@ export class DaylightCalculator {
 
       const point = this.grid[i];
 
-      // Calculate enhanced Sky Component with Monte Carlo sampling
+      // Calculate enhanced Sky Component with Monte Carlo sampling (with obstruction checking)
       point.skyComponent = calculateEnhancedSkyComponent(
         point.position,
         this.windows,
-        scOptions
+        scOptions,
+        obstructions
       );
 
       // Calculate enhanced IRC with multi-surface analysis
